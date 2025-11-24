@@ -60,13 +60,13 @@ To verify Module 1 (Asset Foundry):
 
 **Windows (PowerShell):**
 ```powershell
-./verify_module_1.ps1
+./verify_sensor.ps1
 ```
 
 **Linux / macOS (Bash):**
 ```bash
-chmod +x verify_module_1.sh
-./verify_module_1.sh
+chmod +x verify_sensor.sh
+./verify_sensor.sh
 ```
 This script will:
 1. Check for Docker and start MinIO.
