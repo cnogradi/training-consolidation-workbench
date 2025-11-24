@@ -1,0 +1,23 @@
+[project]
+name = "training-consolidation-workbench"
+version = "0.1.0"
+description = "Workbench for consolidating training material."
+requires-python = ">=3.10"
+dependencies = [
+    "dagster",
+    "dagster-webserver",
+    "unstructured[all-docs]",
+    "python-pptx",
+    "pdf2image",
+    "minio",
+    "boto3",
+    "pillow",
+    "requests"
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.dagster]
+module_name = "src.pipelines.definitions"
