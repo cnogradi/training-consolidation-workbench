@@ -1,5 +1,8 @@
 import os
 import platform
+import subprocess
+import tempfile
+import shutil
 from typing import List
 from PIL import Image
 from pdf2image import convert_from_path
@@ -34,11 +37,60 @@ def render_pdf_pages(file_path: str) -> List[Image.Image]:
         # Fallback or re-raise depending on strictness
         raise
 
+def _check_libreoffice_installed():
+    """Check if 'soffice' (LibreOffice) is available in PATH."""
+    if shutil.which("soffice"):
+        return "soffice"
+    
+    # Common Windows paths if not in PATH
+    if platform.system() == "Windows":
+        common_paths = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"
+        ]
+        for p in common_paths:
+            if os.path.exists(p):
+                return p
+    
+    return None
+
 def render_pptx_slides(file_path: str) -> List[Image.Image]:
     """
-    Render each slide of a PPTX to a PIL Image.
-    Currently a placeholder as pure Python PPTX rendering is complex.
-    Future implementation could use LibreOffice or COM automation on Windows.
+    Render each slide of a PPTX to a PIL Image by converting to PDF first.
+    Requires LibreOffice to be installed.
     """
-    print(f"Warning: PPTX rendering to images is not yet implemented for {file_path}")
-    return []
+    soffice_cmd = _check_libreoffice_installed()
+    
+    if not soffice_cmd:
+        print(f"Warning: LibreOffice 'soffice' command not found. Cannot render PPTX slides for {file_path}.")
+        print("Please install LibreOffice and add it to your PATH.")
+        return []
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Convert PPTX to PDF
+            cmd = [
+                soffice_cmd,
+                "--headless",
+                "--convert-to", "pdf",
+                "--outdir", temp_dir,
+                file_path
+            ]
+            
+            # Run LibreOffice conversion
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            
+            # Expect filename.pdf in temp_dir
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
+            pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
+            
+            if not os.path.exists(pdf_path):
+                print(f"Error: PDF conversion failed. Expected output at {pdf_path}")
+                return []
+                
+            # Now render the PDF
+            return render_pdf_pages(pdf_path)
+            
+    except Exception as e:
+        print(f"Error rendering PPTX {file_path}: {e}")
+        return []

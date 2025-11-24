@@ -17,16 +17,17 @@ To run the ingestion (Module 1), you need the following system libraries install
 
 **Linux (Debian/Ubuntu):**
 ```bash
-sudo apt-get install poppler-utils libmagic-dev tesseract-ocr
+sudo apt-get install poppler-utils libmagic-dev tesseract-ocr libreoffice
 ```
 
 **Windows:**
 - **Poppler**: Download from [poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases), extract, and add the `bin` folder to your PATH.
+- **LibreOffice**: Install from [libreoffice.org](https://www.libreoffice.org/). Ensure `soffice.exe` is in your PATH (default locations are checked automatically).
 - **Docker Desktop**: Required for MinIO.
 
 **macOS:**
 ```bash
-brew install poppler libmagic tesseract
+brew install poppler libmagic tesseract --cask libreoffice
 ```
 
 ### Verification

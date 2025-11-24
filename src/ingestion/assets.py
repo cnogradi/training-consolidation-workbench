@@ -2,6 +2,8 @@ import os
 import uuid
 import json
 import io
+import shutil
+import tempfile
 from typing import List, Dict, Any
 from dagster import asset, Output, AssetExecutionContext
 from src.storage.dagster_resources import MinioResource
@@ -15,7 +17,7 @@ SOURCE_DIR = os.getenv("INGESTION_SOURCE_DIR", "data/raw")
 def raw_documents(context: AssetExecutionContext, minio: MinioResource) -> List[Dict[str, Any]]:
     """
     Ingests documents from the source directory.
-    Renders pages to images, extracts text, and uploads everything to MinIO.
+    Renders pages to images, extracts text (and embedded images), and uploads everything to MinIO.
     Returns a list of document manifests.
     """
     client = minio.get_client()
@@ -41,7 +43,7 @@ def raw_documents(context: AssetExecutionContext, minio: MinioResource) -> List[
         doc_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, filename))
         context.log.info(f"Processing {filename} (UUID: {doc_uuid})")
 
-        # 1. Render Images
+        # 1. Render Images (Slides/Pages)
         images = []
         if filename.lower().endswith(".pdf"):
             images = render_pdf_pages(file_path)
@@ -60,24 +62,59 @@ def raw_documents(context: AssetExecutionContext, minio: MinioResource) -> List[
             image_urls[page_num] = url
             context.log.info(f"Uploaded page {page_num} image")
 
-        # 2. Extract Text
+        # 2. Extract Text & Embedded Images
         try:
-            elements = extract_text_and_metadata(file_path)
+            with tempfile.TemporaryDirectory() as temp_extract_dir:
+                elements = extract_text_and_metadata(
+                    file_path, 
+                    extract_images=True, 
+                    image_output_dir=temp_extract_dir
+                )
+                
+                # Upload extracted embedded images
+                embedded_images_map = {}
+                for img_filename in os.listdir(temp_extract_dir):
+                    img_local_path = os.path.join(temp_extract_dir, img_filename)
+                    if os.path.isfile(img_local_path):
+                        object_name = f"{doc_uuid}/embedded/{img_filename}"
+                        
+                        # Detect content type (basic)
+                        ext = os.path.splitext(img_filename)[1].lower()
+                        ctype = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/png"
+                        
+                        url = client.upload_file("images", object_name, img_local_path, content_type=ctype)
+                        embedded_images_map[img_filename] = url
+                        context.log.info(f"Uploaded embedded image: {img_filename}")
+
+                # Update elements metadata with new image URLs
+                for el in elements:
+                    metadata = el.get("metadata", {})
+                    image_path = metadata.get("image_path")
+                    if image_path:
+                        # unstructured usually saves files as figure-1.jpg, etc.
+                        # We need to match the filename in embedded_images_map
+                        img_filename = os.path.basename(image_path)
+                        if img_filename in embedded_images_map:
+                            # Add a custom field for the S3 URL
+                            metadata["image_url"] = embedded_images_map[img_filename]
+                            # Optionally clear the local path since it won't exist later
+                            # metadata["image_path"] = None 
+
             text_json = json.dumps(elements, indent=2)
             client.upload_bytes("text", f"{doc_uuid}.json", text_json.encode('utf-8'), content_type="application/json")
             context.log.info(f"Uploaded text extraction for {filename}")
         except Exception as e:
             context.log.error(f"Failed to extract text from {filename}: {e}")
             elements = []
+            embedded_images_map = {}
 
         # 3. Create Manifest
         manifest = {
             "doc_uuid": doc_uuid,
             "filename": filename,
-            "page_count": len(images) if images else 0, # Approx if PDF
+            "page_count": len(images) if images else 0,
             "image_urls": image_urls,
-            # linking text elements could be complex if we want page mapping, 
-            # but for now just storing the raw extraction separately is fine.
+            "embedded_images": embedded_images_map,
             "text_location": f"text/{doc_uuid}.json"
         }
         
