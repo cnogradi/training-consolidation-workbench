@@ -1,10 +1,23 @@
 # Verification Script for Sensor (PowerShell)
 
-# 1. Check Docker & MinIO
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    docker-compose up -d minio
+# 1. Check Docker & MinIO (Skip if external)
+if (-not $Env:USE_EXTERNAL_MINIO) {
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        docker-compose up -d minio
+        
+        # Default local env vars
+        $Env:MINIO_ENDPOINT = "localhost:9000"
+        $Env:MINIO_ACCESS_KEY = "minioadmin"
+        $Env:MINIO_SECRET_KEY = "minioadmin"
+    } else {
+        Write-Host "Skipping Docker start (assuming external or already running)..."
+    }
 } else {
-    Write-Host "Skipping Docker start (assuming external or already running)..."
+    Write-Host "Running in External MinIO Mode..."
+    if (-not $Env:MINIO_ENDPOINT) {
+        Write-Error "Error: MINIO_ENDPOINT must be set when USE_EXTERNAL_MINIO is true."
+        exit 1
+    }
 }
 
 # 2. Setup Environment with uv
