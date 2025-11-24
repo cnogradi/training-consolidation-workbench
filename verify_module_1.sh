@@ -34,19 +34,45 @@ else
     echo "Using External MinIO at $MINIO_ENDPOINT"
 fi
 
-# 3. Install Python Dependencies
-echo "Installing Python dependencies..."
-pip install -e .
+# 3. Setup Python Environment with uv
+echo "Setting up Python environment with uv..."
 
+# Check for uv
+if ! command -v uv &> /dev/null; then
+    echo "uv is not installed. Please install it first (see WARP.md)."
+    exit 1
+fi
+
+# Create venv if missing
+if [ ! -d ".venv" ]; then
+    echo "Creating .venv..."
+    uv venv
+fi
+
+# Install dependencies
+echo "Installing dependencies..."
+# uv automatically uses the active venv or creates one, 
+# but specifying it explicitly or activating it ensures consistency.
+# uv pip install finds .venv automatically in the current dir.
+uv pip install -e .
+
+# 4. Run Verification Logic
+# (Wait, verify_module_1 runs dagster materialize. We need to run it inside the venv)
+
+# 5. Run Dagster Materialization
+echo "Running Dagster asset 'raw_documents'..."
+
+# Use python from venv
+VENV_PYTHON=".venv/bin/python"
+VENV_DAGSTER=".venv/bin/dagster"
 # 4. Create Test Data
 echo "Creating test data in data/raw..."
 mkdir -p data/raw
 echo "Hello, this is a test document for the training consolidation workbench." > data/raw/test_doc.txt
 
 # 5. Run Dagster Materialization
-echo "Running Dagster asset 'raw_documents'..."
-
-dagster asset materialize -m src.pipelines.definitions --select raw_documents
+echo "Running Dagster asset 'process_course_artifact' (Note: This asset is now sensor-driven, manual materialization requires config)."
+echo "Skipping manual materialization in this script. Please use verify_sensor.ps1/sh to test the sensor flow."
 
 echo "Success! Assets materialized."
-echo "You can view the MinIO console at http://localhost:9001 to verify the 'images', 'text', and 'manifests' buckets."
+echo "You can view the MinIO console at http://localhost:9001 to verify the 'training-content' bucket."

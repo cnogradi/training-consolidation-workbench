@@ -4,21 +4,45 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Tooling and common commands
 
-As of 2025-11-24 the project skeleton is in place, but Python tooling (build, lint, tests) has not yet been configured:
+The project uses [uv](https://github.com/astral-sh/uv) for fast Python package management and virtual environments.
 
-- `pyproject.toml` exists but is empty.
-- There are no documented commands yet for formatting, linting, or running tests.
+### Setup
 
-When adding or modifying code, **do not assume** the presence of tools like `pytest`, `ruff`, or `black` unless you see them configured in `pyproject.toml` or other config files. Before relying on specific commands, inspect `pyproject.toml`, `README.md`, and any future tooling files for authoritative instructions.
+1.  **Install uv**:
+    ```powershell
+    # Windows
+    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
+    ```bash
+    # Linux/macOS
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
 
-### System Dependencies
+2.  **Create Virtual Environment**:
+    ```bash
+    uv venv
+    ```
+    *This creates a `.venv` directory in the project root.*
 
-To run the ingestion (Module 1), you need the following system libraries installed:
+3.  **Install Dependencies**:
+    ```bash
+    uv pip install -e .
+    ```
 
-**Linux (Debian/Ubuntu):**
-```bash
-sudo apt-get install poppler-utils libmagic-dev tesseract-ocr libreoffice
-```
+### Common Commands
+
+- **Run Dagster**:
+  ```bash
+  # Windows
+  .venv\Scripts\dagster dev -m src.pipelines.definitions
+  
+  # Linux/macOS
+  source .venv/bin/activate
+  dagster dev -m src.pipelines.definitions
+  ```
+
+- **Run Tests**:
+  *(Not yet configured, but will use `uv run pytest`)*
 
 **Windows:**
 - **Poppler**: Download from [poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases), extract, and add the `bin` folder to your PATH.
@@ -50,7 +74,7 @@ This script will:
 3. Create a test document.
 4. Run the Dagster ingestion pipeline.
 
-Check results at http://localhost:9001 (User/Pass: `minioadmin`).
+Check results at http://localhost:9001 (User/Pass: `minioadmin`). Look for the `training-content` bucket.
 
 ## Conceptual Architecture: The 5-Module System
 

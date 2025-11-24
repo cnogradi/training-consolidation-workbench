@@ -42,17 +42,12 @@ if (-not (Test-Path "data/raw")) {
 Set-Content -Path "data/raw/test_doc.txt" -Value "Hello, this is a test document for the training consolidation workbench."
 
 # 5. Run Dagster Materialization
-Write-Host "Running Dagster asset 'raw_documents'..."
-# Set default env vars for local dev if not set
-$Env:MINIO_ENDPOINT = "localhost:9000"
-$Env:MINIO_ACCESS_KEY = "minioadmin"
-$Env:MINIO_SECRET_KEY = "minioadmin"
-
-& $PYTHON_CMD -m dagster asset materialize -m src.pipelines.definitions --select raw_documents
+Write-Host "Running Dagster asset 'process_course_artifact' (Note: This asset is now sensor-driven, manual materialization requires config)."
+Write-Host "Skipping manual materialization in this script. Please use verify_sensor.ps1 to test the sensor flow."
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Success! Assets materialized."
-    Write-Host "You can view the MinIO console at http://localhost:9001 to verify the 'images', 'text', and 'manifests' buckets."
+    Write-Host "You can view the MinIO console at http://localhost:9001 to verify the 'training-content' bucket."
 } else {
     Write-Error "Dagster run failed."
     exit 1

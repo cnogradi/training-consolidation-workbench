@@ -55,15 +55,22 @@ class MinioClient:
             print("error occurred.", exc)
             raise
 
-    def get_presigned_url(self, bucket_name: str, object_name: str, expires_hours: int = 24):
-        """Get a presigned URL for an object."""
+    def download_file(self, bucket_name: str, object_name: str, file_path: str):
+        """Download a file from the bucket to the local filesystem."""
         try:
-            return self.client.get_presigned_url(
-                method="GET",
-                bucket_name=bucket_name,
-                object_name=object_name,
-                expires=timedelta(hours=expires_hours),
-            )
+            self.client.fget_object(bucket_name=bucket_name, object_name=object_name, file_path=file_path)
+            print(f"Downloaded object '{object_name}' from bucket '{bucket_name}' to '{file_path}'.")
+        except S3Error as exc:
+            print("error occurred.", exc)
+            raise
+    
+    def list_objects(self, bucket_name: str, prefix: str = None, recursive: bool = False):
+        """List objects in a bucket."""
+        try:
+            return self.client.list_objects(bucket_name=bucket_name, prefix=prefix, recursive=recursive)
+        except S3Error as exc:
+            print("error occurred.", exc)
+            raise
         except S3Error as exc:
             print("error occurred.", exc)
             return None
