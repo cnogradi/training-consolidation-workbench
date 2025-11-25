@@ -18,7 +18,7 @@ dependencies = [
     "neo4j",
     "weaviate-client<4.0.0",
     "openai",
-    "instructor",
+    "baml-py",
     "pydantic"
 ]
 

@@ -29,6 +29,27 @@ The project uses [uv](https://github.com/astral-sh/uv) for fast Python package m
     uv pip install -e .
     ```
 
+### BAML (Extraction Logic)
+
+This project uses **BAML** (Boundary-Aware Model Language) for structured LLM outputs.
+
+1.  **Install BAML CLI**:
+    *   **Windows (PowerShell)**:
+        ```powershell
+        iwr https://raw.githubusercontent.com/BoundaryML/baml/main/install-baml.ps1 -useb | iex
+        ```
+    *   **Linux/macOS**:
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/BoundaryML/baml/main/install-baml.sh | sh
+        ```
+
+2.  **Generate Python Client**:
+    Whenever you modify files in `baml_src/`, you must regenerate the Python client:
+    ```bash
+    baml-cli generate
+    ```
+    *Note: The verification scripts do not run this automatically. You must run it once after setting up the project.*
+
 ### Common Commands
 
 - **Run Dagster**:
