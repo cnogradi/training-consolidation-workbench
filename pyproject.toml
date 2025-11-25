@@ -16,7 +16,7 @@ dependencies = [
     "antlr4-python3-runtime>=4.13",
     "python-dotenv",
     "neo4j",
-    "weaviate-client",
+    "weaviate-client<4.0.0",
     "openai",
     "instructor",
     "pydantic"
