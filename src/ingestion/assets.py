@@ -17,6 +17,8 @@ class CourseArtifactConfig(Config):
     filename: str
     object_name: str
 
+from src.ingestion.models import CourseMetadata
+
 @asset
 def process_course_artifact(context: AssetExecutionContext, config: CourseArtifactConfig, minio: MinioResource) -> Dict[str, Any]:
     """
@@ -36,6 +38,17 @@ def process_course_artifact(context: AssetExecutionContext, config: CourseArtifa
         file_path = os.path.join(temp_dir, filename)
         client.download_file(BUCKET_NAME, source_object_name, file_path)
         
+        # Try to download metadata.json if it exists
+        metadata = {}
+        try:
+            metadata_path = os.path.join(temp_dir, "metadata.json")
+            client.download_file(BUCKET_NAME, f"{course_id}/metadata.json", metadata_path)
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            context.log.info("Downloaded course metadata.")
+        except Exception:
+            context.log.warning("No metadata.json found for this course.")
+
         # 1. Render Images (Slides/Pages)
         images = []
         if filename.lower().endswith(".pdf"):
@@ -100,6 +113,7 @@ def process_course_artifact(context: AssetExecutionContext, config: CourseArtifa
         manifest = {
             "course_id": course_id,
             "filename": filename,
+            "metadata": metadata,
             "source_url": f"http://{minio.endpoint}/{BUCKET_NAME}/{source_object_name}",
             "page_count": len(images) if images else 0,
             "image_urls": image_urls,

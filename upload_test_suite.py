@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from src.storage.minio import MinioClient
 from src.utils.generate_test_docs import generate_all
 
+import json
+
 def main():
     # 0. Load environment variables from .env
     load_dotenv()
@@ -32,11 +34,13 @@ def main():
 
     print(f"\nUploading to MinIO ({endpoint})...")
     
-    for filename, filepath in generated_files:
+    for filename, filepath, metadata in generated_files:
         course_id = str(uuid.uuid4())
         object_name = f"{course_id}/{filename}"
+        metadata_object_name = f"{course_id}/metadata.json"
         
         print(f"  - {filename} -> {bucket_name}/{object_name}")
+        print(f"  - Metadata -> {bucket_name}/{metadata_object_name}")
         
         # Determine content type
         ctype = "application/octet-stream"
@@ -44,7 +48,12 @@ def main():
         elif filename.endswith(".pptx"): ctype = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         elif filename.endswith(".docx"): ctype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         
+        # Upload course file
         client.upload_file(bucket_name, object_name, filepath, content_type=ctype)
+        
+        # Upload metadata
+        metadata_bytes = json.dumps(metadata, indent=2).encode('utf-8')
+        client.upload_bytes(bucket_name, metadata_object_name, metadata_bytes, content_type="application/json")
 
     print("\n--- Upload Complete ---")
     print("1. Ensure Dagster is running: `dagster dev -m src.pipelines.definitions`")

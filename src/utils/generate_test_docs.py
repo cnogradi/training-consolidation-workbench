@@ -44,7 +44,25 @@ def generate_course_a_pdf(output_dir):
     c.showPage()
     c.save()
     print(f"Generated {path}")
-    return filename, path
+    
+    metadata = {
+        "business_unit": "Software Engineering",
+        "course_title": "Intro to Git",
+        "version": "1.0",
+        "scope_of_material": "Git Basics, Commits, Branches",
+        "current_delivery_method": "Web",
+        "duration_hours": 2.0,
+        "costs": "Low",
+        "tech_data_assessment": "None",
+        "source_of_content": "Internal Wiki",
+        "current_instructors": "Alice Smith",
+        "audience": "Junior Developers",
+        "location": "Remote",
+        "level_of_material": "Beginner",
+        "engineering_discipline": "Software",
+        "comments": "Standard onboarding course."
+    }
+    return filename, path, metadata
 
 def generate_course_b_pptx(output_dir):
     filename = "course_b_git_workflows.pptx"
@@ -89,7 +107,25 @@ def generate_course_b_pptx(output_dir):
     
     prs.save(path)
     print(f"Generated {path}")
-    return filename, path
+    
+    metadata = {
+        "business_unit": "DevOps",
+        "course_title": "Git Workflows",
+        "version": "2.1",
+        "scope_of_material": "Feature Branching, Pull Requests",
+        "current_delivery_method": "In Person",
+        "duration_hours": 4.0,
+        "costs": "Medium",
+        "tech_data_assessment": "Required",
+        "source_of_content": "DevOps Handbook",
+        "current_instructors": "Bob Jones",
+        "audience": "All Developers",
+        "location": "New York Office",
+        "level_of_material": "Intermediate",
+        "engineering_discipline": "Software",
+        "comments": "Critical for compliance."
+    }
+    return filename, path, metadata
 
 def generate_course_c_docx(output_dir):
     filename = "course_c_git_collaboration.docx"
@@ -122,7 +158,25 @@ def generate_course_c_docx(output_dir):
     
     doc.save(path)
     print(f"Generated {path}")
-    return filename, path
+    
+    metadata = {
+        "business_unit": "Software Engineering",
+        "course_title": "Collaborating with Git",
+        "version": "1.5",
+        "scope_of_material": "Conflicts, Merge vs Rebase",
+        "current_delivery_method": "Hybrid",
+        "duration_hours": 3.0,
+        "costs": "Low",
+        "tech_data_assessment": "None",
+        "source_of_content": "Community Guidelines",
+        "current_instructors": "Charlie Brown",
+        "audience": "Senior Developers",
+        "location": "London Office",
+        "level_of_material": "Advanced",
+        "engineering_discipline": "Software",
+        "comments": "Focus on conflict resolution."
+    }
+    return filename, path, metadata
 
 def generate_all(output_dir="test_docs"):
     if not os.path.exists(output_dir):

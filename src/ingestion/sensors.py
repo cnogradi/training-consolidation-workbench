@@ -63,6 +63,10 @@ def course_upload_sensor(context: SensorEvaluationContext):
         if "/generated/" in obj_name:
             continue
             
+        # Skip metadata files to avoid double triggering
+        if obj_name.endswith("/metadata.json"):
+            continue
+            
         # Skip if already processed
         if obj_name <= last_processed_object:
             continue

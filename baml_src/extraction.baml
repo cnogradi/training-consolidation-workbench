@@ -33,6 +33,8 @@ function ExtractOutline(document_text: string) -> Outline {
 
     Document Text:
     {{ document_text }}
+
+    {{ ctx.output_format }}
   "#
 }
 
@@ -45,5 +47,7 @@ function ExtractConcepts(slide_text: string) -> SlideContent {
 
     Slide Text:
     {{ slide_text }}
+
+    {{ ctx.output_format }}
   "#
 }

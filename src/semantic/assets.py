@@ -45,10 +45,31 @@ def build_knowledge_graph(
     try:
         outline = llm.extract_outline(full_text)
         
-        # Create Course Node
+        # Create Course Node with Metadata
+        metadata = manifest.get("metadata", {})
         neo4j_client.execute_query(
-            "MERGE (c:Course {id: $id}) SET c.title = $title",
-            {"id": course_id, "title": manifest["filename"]}
+            """
+            MERGE (c:Course {id: $id}) 
+            SET c.title = $title,
+                c.business_unit = $business_unit,
+                c.version = $version,
+                c.delivery_method = $delivery,
+                c.duration_hours = $duration,
+                c.audience = $audience,
+                c.level = $level,
+                c.discipline = $discipline
+            """,
+            {
+                "id": course_id, 
+                "title": manifest["filename"], # Or metadata.get('course_title') if preferred
+                "business_unit": metadata.get("business_unit"),
+                "version": metadata.get("version"),
+                "delivery": metadata.get("current_delivery_method"),
+                "duration": metadata.get("duration_hours"),
+                "audience": metadata.get("audience"),
+                "level": metadata.get("level_of_material"),
+                "discipline": metadata.get("engineering_discipline")
+            }
         )
         
         # Create Sections recursively

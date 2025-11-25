@@ -26,10 +26,19 @@ class LLMExtractor:
         """
         # Truncate to avoid huge context if needed, though BAML/LLM handles it
         truncated_text = document_text[:20000] 
-        return b.ExtractOutline(document_text=truncated_text)
+        # BAML calls are synchronous in the current version of baml-py unless configured otherwise
+        # If using AsyncClient, we need to use asyncio.run() or await.
+        # The standard `b` client is usually sync if generated as sync.
+        # However, errors indicate 'coroutine' object, meaning baml generated async methods.
+        # We need to await them. Since Dagster assets can be async or sync, 
+        # we can wrap this in a sync helper or make the asset async.
+        # For now, simpler to wrap in asyncio.run() here if the asset is synchronous.
+        import asyncio
+        return asyncio.run(b.ExtractOutline(document_text=truncated_text))
 
     def extract_concepts(self, slide_text: str) -> SlideContent:
         """
         Extract concepts and learning objectives from a single slide's text.
         """
-        return b.ExtractConcepts(slide_text=slide_text)
+        import asyncio
+        return asyncio.run(b.ExtractConcepts(slide_text=slide_text))
