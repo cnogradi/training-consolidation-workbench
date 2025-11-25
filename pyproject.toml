@@ -21,7 +21,8 @@ dependencies = [
     "baml-py",
     "pydantic",
     "reportlab",
-    "python-docx"
+    "python-docx",
+    "dspy-ai"
 ]
 
 [build-system]

@@ -40,3 +40,6 @@ Thumbs.db
 
 # dagster
 .tmp_dagster*/
+
+# test_docs
+test_docs/

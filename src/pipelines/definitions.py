@@ -18,9 +18,15 @@ process_course_job = define_asset_job(
     selection=["process_course_artifact", "build_knowledge_graph"]
 )
 
+# Define the harmonization job (manual trigger or scheduled)
+harmonize_concepts_job = define_asset_job(
+    name="harmonize_concepts_job",
+    selection="harmonize_concepts"
+)
+
 defs = Definitions(
     assets=all_assets,
-    jobs=[process_course_job],
+    jobs=[process_course_job, harmonize_concepts_job],
     sensors=[course_upload_sensor],
     resources={
         "minio": MinioResource(),
