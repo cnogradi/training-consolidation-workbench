@@ -1,5 +1,9 @@
 import sys
 import os
+from dotenv import load_dotenv
+
+# Load env vars from .env file if present
+load_dotenv()
 
 # Add src to path so we can import from it
 sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
