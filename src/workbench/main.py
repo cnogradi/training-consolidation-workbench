@@ -44,13 +44,17 @@ def get_source_tree(discipline: Optional[str] = None):
     Optional: Filter by engineering discipline.
     """
     if discipline:
+        # Convert discipline to title case to match DB values (e.g. "software" -> "Software")
+        # Or handle via backend logic if DB is strict.
+        # Assuming DB uses Capitalized "Software", "Mechanical" etc.
         query = """
         MATCH (c:Course)
-        WHERE c.discipline = $discipline
+        WHERE c.discipline =~ $discipline_regex
         RETURN c.business_unit as bu, c.id as id, c.title as title, c.discipline as discipline
         ORDER BY bu, title
         """
-        params = {"discipline": discipline}
+        # Case-insensitive regex search for discipline
+        params = {"discipline_regex": f"(?i){discipline}"}
     else:
         query = """
         MATCH (c:Course)
@@ -124,7 +128,9 @@ def get_slide_details(slide_id: str):
         course_id = parts[0]
         page_num = parts[1]
         
-    object_name = f"images/{course_id}/page_{page_num}.png"
+    # object_name = f"images/{course_id}/page_{page_num}.png"
+    # Using generated/pages structure to match MinIO
+    object_name = f"{course_id}/generated/pages/page_{page_num}.png"
     s3_url = minio_client.get_presigned_url(BUCKET_NAME, object_name)
     
     # 3. Format Concepts
@@ -185,7 +191,7 @@ def create_draft_project(title: str):
     project_id = str(uuid.uuid4())
     
     query = """
-    CREATE (p:Project:TargetNode {id: $id, title: $title, status: "empty"})
+    CREATE (p:Project:TargetNode {id: $id, title: $title, status: "empty", content_markdown: ""})
     RETURN p.id as id, p.title as title, p.status as status
     """
     results = neo4j_client.execute_query(query, {"id": project_id, "title": title})
@@ -207,7 +213,7 @@ def add_draft_node(parent_id: str, title: str):
     
     query = """
     MATCH (parent {id: $parent_id})
-    CREATE (child:TargetNode {id: $id, title: $title, status: "empty"})
+    CREATE (child:TargetNode {id: $id, title: $title, status: "empty", content_markdown: ""})
     MERGE (parent)-[:HAS_CHILD]->(child)
     RETURN child.id as id, child.title as title, child.status as status
     """

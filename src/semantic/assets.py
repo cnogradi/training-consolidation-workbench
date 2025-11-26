@@ -30,6 +30,9 @@ def harmonize_concepts(context: AssetExecutionContext, neo4j: Neo4jResource):
         raise
     finally:
         neo4j_client.close()
+
+@asset
+def build_knowledge_graph(
     context: AssetExecutionContext,
     process_course_artifact: Dict[str, Any],
     minio: MinioResource,
