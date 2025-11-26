@@ -22,7 +22,10 @@ dependencies = [
     "pydantic",
     "reportlab",
     "python-docx",
-    "dspy-ai"
+    "dspy-ai",
+    "fastapi",
+    "uvicorn",
+    "dagster-graphql"
 ]
 
 [build-system]

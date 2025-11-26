@@ -24,9 +24,16 @@ harmonize_concepts_job = define_asset_job(
     selection="harmonize_concepts"
 )
 
+from src.workbench.operations import synthesize_node
+from dagster import job
+
+@job(name="synthesize_node_job")
+def synthesize_node_job():
+    synthesize_node()
+
 defs = Definitions(
     assets=all_assets,
-    jobs=[process_course_job, harmonize_concepts_job],
+    jobs=[process_course_job, harmonize_concepts_job, synthesize_node_job],
     sensors=[course_upload_sensor],
     resources={
         "minio": MinioResource(),

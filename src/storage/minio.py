@@ -71,6 +71,10 @@ class MinioClient:
         except S3Error as exc:
             print("error occurred.", exc)
             raise
+    def get_presigned_url(self, bucket_name: str, object_name: str, expires: timedelta = timedelta(hours=1)):
+        """Generate a presigned URL for GET request."""
+        try:
+            return self.client.presigned_get_object(bucket_name=bucket_name, object_name=object_name, expires=expires)
         except S3Error as exc:
             print("error occurred.", exc)
-            return None
+            raise
