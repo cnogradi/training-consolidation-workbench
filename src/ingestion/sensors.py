@@ -53,6 +53,10 @@ def course_upload_sensor(context: SensorEvaluationContext):
     
     sorted_objects = sorted(objects, key=lambda obj: obj.object_name)
     
+    from src.ingestion.assets import course_files_partition
+    
+    new_partition_keys = []
+    
     for obj in sorted_objects:
         if obj.is_dir:
             continue
@@ -67,7 +71,7 @@ def course_upload_sensor(context: SensorEvaluationContext):
         if obj_name.endswith("/metadata.json"):
             continue
             
-        # Skip if already processed
+        # Skip if already processed (based on cursor)
         if obj_name <= last_processed_object:
             continue
             
@@ -77,31 +81,30 @@ def course_upload_sensor(context: SensorEvaluationContext):
         if len(parts) != 2:
             continue
             
-        course_id, filename = parts
+        # Collect valid object names as partition keys
+        new_partition_keys.append(obj_name)
         
-        # Construct run config nested correctly for ops
-        run_config = {
-            "ops": {
-                "process_course_artifact": {
-                    "config": {
-                        "course_id": course_id,
-                        "filename": filename,
-                        "object_name": obj_name
-                    }
-                }
-            }
-        }
-
-        run_requests.append(RunRequest(
-            run_key=obj_name, # unique key per file
-            run_config=run_config
-        ))
+        # Construct run request for this partition
+        # Note: With dynamic partitions, we first need to ADD the partition, then trigger the run.
+        # However, the sensor context allows returning RunRequests.
+        # We also need to tell Dagster that these partitions exist.
+        # The standard pattern for dynamic partitions in sensors is:
+        # 1. context.instance.add_dynamic_partitions(partition_def_name, [keys])
+        # 2. yield RunRequest(partition_key=key)
         
-        new_cursor = obj_name
-        
-        # Limit batch size to avoid overwhelming in one tick
-        if len(run_requests) >= 5:
+        # We limit batch size here to avoid timeouts
+        if len(new_partition_keys) >= 5:
             break
             
+    if new_partition_keys:
+        # Register partitions
+        context.instance.add_dynamic_partitions(course_files_partition.name, new_partition_keys)
+        
+        for key in new_partition_keys:
+            yield RunRequest(
+                run_key=key,
+                partition_key=key
+            )
+            new_cursor = key # Update cursor to the last processed key
+            
     context.update_cursor(new_cursor)
-    return run_requests

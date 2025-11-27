@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict
 from dagster import asset, AssetExecutionContext
-from src.ingestion.assets import CourseArtifactConfig
+from src.ingestion.assets import CourseArtifactConfig, course_files_partition
 from src.storage.dagster_resources import MinioResource, Neo4jResource, WeaviateResource
 from src.ingestion.assets import BUCKET_NAME
 from src.semantic.extraction import LLMExtractor
@@ -31,7 +31,7 @@ def harmonize_concepts(context: AssetExecutionContext, neo4j: Neo4jResource):
     finally:
         neo4j_client.close()
 
-@asset
+@asset(partitions_def=course_files_partition)
 def build_knowledge_graph(
     context: AssetExecutionContext,
     process_course_artifact: Dict[str, Any],

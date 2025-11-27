@@ -5,12 +5,14 @@ import io
 import shutil
 import tempfile
 from typing import List, Dict, Any
-from dagster import asset, Output, AssetExecutionContext, Config
+from dagster import asset, Output, AssetExecutionContext, Config, DynamicPartitionsDefinition
 from src.storage.dagster_resources import MinioResource
 from src.ingestion.rendering import render_pdf_pages, render_pptx_slides, _check_libreoffice_installed
 from src.ingestion.extraction import extract_text_and_metadata
 
 BUCKET_NAME = "training-content"
+
+course_files_partition = DynamicPartitionsDefinition(name="course_files")
 
 class CourseArtifactConfig(Config):
     course_id: str
@@ -19,34 +21,22 @@ class CourseArtifactConfig(Config):
 
 from src.ingestion.models import CourseMetadata
 
-@asset
-def process_course_artifact(context: AssetExecutionContext, config: CourseArtifactConfig, minio: MinioResource) -> Dict[str, Any]:
+@asset(partitions_def=course_files_partition)
+def process_course_artifact(context: AssetExecutionContext, minio: MinioResource) -> Dict[str, Any]:
     """
     Processes a single course artifact downloaded from MinIO.
     Triggered by the sensor when a new file is found in 'training-content/{course_id}/{filename}'.
+    Uses the partition key as the MinIO object name.
     """
     client = minio.get_client()
     
-    course_id = config.course_id
-    filename = config.filename
-    source_object_name = config.object_name
+    # Get partition key (object name)
+    source_object_name = context.partition_key
     
-    # Set LibreOffice path for Unstructured if found
-    soffice_path = _check_libreoffice_installed()
-    if soffice_path:
-        context.log.info(f"Found LibreOffice at: {soffice_path}")
-        # Add directory to PATH just in case
-        bin_dir = os.path.dirname(soffice_path)
-        if bin_dir not in os.environ["PATH"]:
-            os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
-            
-        # Set environment variables used by Unstructured or dependencies
-        # UNSTRUCTURED_SO_SLICE_PATH is the requested var (assuming typo for 'soffice')
-        os.environ["UNSTRUCTURED_SO_SLICE_PATH"] = soffice_path 
-        # Standard LibreOffice binary path for various tools
-        os.environ["LIBREOFFICE_BINARY"] = soffice_path
-    else:
-        context.log.warning("LibreOffice not found. PPTX extraction might fail.")
+    # Parse object name to get details
+    parts = source_object_name.split('/')
+    course_id = parts[0]
+    filename = parts[1]
     
     context.log.info(f"Processing artifact: {source_object_name} (Course ID: {course_id})")
 
