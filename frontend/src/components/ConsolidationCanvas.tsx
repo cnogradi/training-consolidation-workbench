@@ -11,8 +11,11 @@ interface ConsolidationCanvasProps {
     refreshTrigger?: number;
 }
 
+import { useAppStore } from '../store';
+
 export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projectId, setProjectId, discipline, refreshTrigger }) => {
-    const [structure, setStructure] = useState<TargetDraftNode[]>([]);
+    const structure = useAppStore(state => state.structure);
+    const fetchStructure = useAppStore(state => state.fetchStructure);
 
     // Initial Project Creation if needed
     useEffect(() => {
@@ -22,27 +25,22 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
             // Auto-create for demo
             // Add a flag to prevent double creation in React Strict Mode
             let ignore = false;
-            
+
             api.createDraftProject(`Unified ${discipline} Standard`).then(p => {
                 if (ignore) return;
                 setProjectId(p.id);
                 // Add a default chapter
                 api.addDraftNode(p.id, "Topic 1").then(() => {
                     if (ignore) return;
-                    fetchStructure(p.id);
+                    fetchStructure();
                 });
             });
-            
+
             return () => { ignore = true; };
         } else {
-            fetchStructure(projectId);
+            fetchStructure();
         }
-    }, [projectId, discipline, refreshTrigger, setProjectId]); // Added setProjectId to dependency
-
-    const fetchStructure = async (pid: string) => {
-        const nodes = await api.getDraftStructure(pid);
-        setStructure(nodes);
-    };
+    }, [projectId, discipline, refreshTrigger, setProjectId, fetchStructure]);
 
     return (
         <div className="flex-1 bg-slate-50 p-6 flex flex-col h-full overflow-y-auto custom-scrollbar">
@@ -69,7 +67,7 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
                 {/* Draft Nodes (SynthBlocks) */}
                 <div className="space-y-6">
                     {structure.filter(n => n.parent_id === projectId).map(node => (
-                        <SynthBlock key={node.id} node={node} onRefresh={() => fetchStructure(projectId!)} />
+                        <SynthBlock key={node.id} node={node} onRefresh={fetchStructure} />
                     ))}
                 </div>
 

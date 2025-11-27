@@ -16,11 +16,11 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const SortableSlideThumbnail: React.FC<{ id: string, url?: string, onRemove?: () => void, parentNode: TargetDraftNode }> = ({ id, url, onRemove, parentNode }) => {
-    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ 
+    const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
         id,
-        data: { type: 'sortable-item', node: parentNode } 
+        data: { type: 'sortable-item', node: parentNode }
     });
-    
+
     const setActiveSlideId = useAppStore(state => state.setActiveSlideId);
     const activeSlideId = useAppStore(state => state.activeSlideId);
     const isActive = activeSlideId === id;
@@ -31,9 +31,9 @@ const SortableSlideThumbnail: React.FC<{ id: string, url?: string, onRemove?: ()
     };
 
     return (
-        <div 
-            ref={setNodeRef} 
-            style={style} 
+        <div
+            ref={setNodeRef}
+            style={style}
             onClick={() => setActiveSlideId(id)}
             className={clsx(
                 "group relative w-full h-14 bg-white border rounded flex items-center gap-3 p-1.5 shadow-sm hover:shadow-md transition-all",
@@ -75,12 +75,7 @@ interface SynthBlockProps {
 
 export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     // Handle Drop from Source Browser to Block
-    // The SynthBlock itself is a droppable zone.
-    // When we drop something on it, the global onDragEnd in App.tsx handles the mapping.
-    // However, for visual feedback during drag, useDroppable is sufficient.
-    // If it's "bouncing back", it means the `over` id detected in App.tsx is null or incorrect.
-    // Or the type check fails.
-    
+    // We make the "Ingredients" box the specific drop target
     const { isOver, setNodeRef } = useDroppable({
         id: node.id,
         data: { type: 'target', node }
@@ -114,18 +109,6 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
         if (items.length > 0) load();
     }, [items]);
 
-    // Handle Reordering (Visual)
-    // useEffect(() => {
-    //     const handleReorder = (e: Event) => {
-    //         const event = e as CustomEvent;
-    //         // Logic same as before, but scoped to THIS block? 
-    //         // Actually the event is global. We need to check if the IDs belong to us.
-    //         // ... (omitted for brevity, reusing previous logic if possible or relying on global dnd context)
-    //     };
-    //     // For now, let's rely on parent or global handler updates.
-    //     // Ideally, DndContext should be closer or we use the store.
-    // }, []);
-
     const handleSynthesize = async () => {
         setSynthesizing(true);
         try {
@@ -145,12 +128,8 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     };
 
     return (
-        <div 
-            ref={setNodeRef}
-            className={clsx(
-                "bg-white border rounded-xl transition-all mb-6 shadow-sm group",
-                isOver ? "border-brand-teal ring-4 ring-brand-teal/10" : "border-slate-200"
-            )}
+        <div
+            className="bg-white border border-slate-200 rounded-xl transition-all mb-6 shadow-sm group"
         >
             {/* Header Row */}
             <div className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl">
@@ -158,8 +137,8 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                     {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
                 <div className="flex-1">
-                    <input 
-                        type="text" 
+                    <input
+                        type="text"
                         defaultValue={node.title}
                         className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none w-full"
                     />
@@ -178,8 +157,14 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                         <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
                             Ingredients
                         </div>
-                        
-                        <div className="flex-1 min-h-[100px] bg-slate-50 rounded-lg border border-dashed border-slate-200 p-2 transition-colors hover:border-slate-300">
+
+                        <div
+                            ref={setNodeRef}
+                            className={clsx(
+                                "flex-1 min-h-[100px] bg-slate-50 rounded-lg border border-dashed p-2 transition-colors",
+                                isOver ? "border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/20" : "border-slate-200 hover:border-slate-300"
+                            )}
+                        >
                             {items.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center">
                                     <Sparkles size={16} className="mb-2 opacity-50" />
@@ -214,7 +199,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                         <div className="mt-auto bg-slate-50 p-3 rounded-lg border border-slate-200">
                             <div className="flex items-start gap-2 mb-3">
                                 <MessageSquare size={14} className="text-slate-400 mt-1" />
-                                <textarea 
+                                <textarea
                                     className="w-full bg-transparent text-xs text-slate-700 resize-none focus:outline-none"
                                     placeholder="Instructions for AI: e.g. 'Merge these slides, emphasizing safety protocols...'"
                                     rows={2}
@@ -223,7 +208,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                 />
                             </div>
                             <div className="flex justify-end">
-                                <button 
+                                <button
                                     onClick={handleSynthesize}
                                     disabled={synthesizing || items.length === 0}
                                     className="bg-brand-teal text-white text-xs font-medium px-3 py-1.5 rounded-md flex items-center gap-1.5 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
