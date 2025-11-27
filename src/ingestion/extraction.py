@@ -18,25 +18,14 @@ def extract_text_and_metadata(file_path: str, extract_images: bool = False, imag
         
         kwargs = {
             "strategy": strategy,
-            "infer_table_structure": False, # True often requires heavy models
+            "infer_table_structure": True,
         }
         if extract_images and image_output_dir:
-            # Image extraction strictly requires hi_res and deep learning models.
-            # If we are cutting deps to avoid torch/cuda, we might lose this feature.
-            # We will try to request it, but if libs are missing, unstructured might raise an error or warn.
-            # For now, we keep the logic but user must be aware:
-            # REDUCED INSTALL -> NO IMAGE EXTRACTION from PDFs usually.
-            pass
-            
-            # If we really want to try:
-            # kwargs["strategy"] = "hi_res" 
-            # kwargs["extract_image_block_types"] = ["Image", "Table"]
-            # ...
-            
-            # Since the user asked to cut cuda/torch deps to fix install, 
-            # we likely CANNOT support image extraction from PDF via Unstructured models.
-            # We will disable it in this configuration to ensure pipeline runs.
-            print("Warning: Image extraction disabled due to reduced dependencies.")
+            # Capture Images (Diagrams, Clip Art, Photos) and Tables
+            kwargs[ "strategy"] = "hi_res"
+            kwargs["extract_image_block_types"] = ["Image", "Table"]
+            kwargs["extract_image_block_to_payload"] = False # Save to disk
+            kwargs["extract_image_block_output_dir"] = image_output_dir
 
         elements = partition(filename=file_path, **kwargs)
         
