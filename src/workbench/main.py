@@ -228,20 +228,28 @@ def search_source_tree(request: SearchRequest):
     candidate_ids = []
     if request.query:
         try:
-            # Weaviate NearText search
+            # Weaviate NearText search with certainty threshold
+            print(f"Searching Weaviate for: {request.query}")
             response = weaviate_client.client.query.get(
                 "SlideText", ["slide_id"]
             ).with_near_text({
-                "concepts": [request.query]
-            }).with_limit(50).do() # Higher limit for filtering
+                "concepts": [request.query],
+                "certainty": 0.7  # Only return results with >70% relevance (0.0-1.0 scale)
+            }).with_limit(50).do()
+            
+            print(f"Weaviate raw response: {response}")
             
             if "data" in response and "Get" in response["data"] and "SlideText" in response["data"]["Get"]:
                 candidate_ids = [item["slide_id"] for item in response["data"]["Get"]["SlideText"]]
+                print(f"Found {len(candidate_ids)} candidate slide IDs: {candidate_ids}")
             
             if not candidate_ids:
+                print(f"No semantic matches found for: {request.query}")
                 return [] # No semantic matches
         except Exception as e:
             print(f"Weaviate search failed: {e}")
+            import traceback
+            traceback.print_exc()
             # Fallback or return empty? Let's return empty for now if query was explicit
             return []
 

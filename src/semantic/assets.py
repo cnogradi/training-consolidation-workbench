@@ -129,13 +129,19 @@ def build_knowledge_graph(
         page_num = el.get("metadata", {}).get("page_number", 1)
         pages[page_num].append(el.get("text", ""))
         
-    # Ensure Weaviate Class exists
+    # Ensure Weaviate Class exists with text vectorizer enabled
     weaviate_client.ensure_class({
         "class": "SlideText",
+        "vectorizer": "text2vec-transformers",  # Enable semantic search
+        "moduleConfig": {
+            "text2vec-transformers": {
+                "vectorizeClassName": False  # Don't vectorize the class name, just the properties
+            }
+        },
         "properties": [
-            {"name": "text", "dataType": ["text"]},
-            {"name": "course_id", "dataType": ["string"]},
-            {"name": "slide_id", "dataType": ["string"]},
+            {"name": "text", "dataType": ["text"], "moduleConfig": {"text2vec-transformers": {"skip": False, "vectorizePropertyName": False}}},
+            {"name": "course_id", "dataType": ["string"], "moduleConfig": {"text2vec-transformers": {"skip": True}}},
+            {"name": "slide_id", "dataType": ["string"], "moduleConfig": {"text2vec-transformers": {"skip": True}}},
         ]
     })
 
