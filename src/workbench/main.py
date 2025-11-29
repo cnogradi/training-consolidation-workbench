@@ -10,7 +10,8 @@ from src.storage.neo4j import Neo4jClient
 from src.storage.weaviate import WeaviateClient
 from src.storage.minio import MinioClient
 from src.workbench.models import (
-    ConceptNode, SourceSlide, TargetDraftNode, SynthesisRequest, SearchRequest
+    ConceptNode, SourceSlide, TargetDraftNode, SynthesisRequest, SearchRequest,
+    GenerateSkeletonRequest, GenerateSkeletonResponse, SkeletonRequest, ProjectTreeResponse
 )
 from src.ingestion.assets import BUCKET_NAME
 
@@ -522,6 +523,127 @@ def get_synthesis_preview(node_id: str):
         raise HTTPException(status_code=404, detail="Node not found")
         
     return {"content": results[0]["content"], "status": results[0]["status"]}
+
+
+# --- F. Curriculum Generator ---
+
+@app.post("/curriculum/generate", response_model=GenerateSkeletonResponse)
+def generate_curriculum(request: GenerateSkeletonRequest):
+    """
+    Generate a consolidated curriculum skeleton from selected source sections.
+    
+    This endpoint:
+    1. Fetches concept summaries from selected sections
+    2. Uses DSPy to intelligently merge concepts and eliminate redundancy
+    3. Finds best matching slides for each generated section
+    4. Creates a Project with TargetNodes in Neo4j
+    
+    Returns the generated project with suggested source slides.
+    """
+    from src.services.generator_service import GeneratorService
+    
+    service = GeneratorService()
+    try:
+        result = service.generate_skeleton(request.source_ids)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        service.close()
+
+
+@app.post("/project/generate_skeleton", response_model=ProjectTreeResponse)
+def generate_project_skeleton(request: SkeletonRequest):
+    """
+    Generate a new curriculum project with AI-suggested sections.
+    
+    This creates a Project with TargetNodes in 'suggestion' status.
+    User can review and accept/reject each suggested section.
+    """
+    from src.services.generator_service import GeneratorService
+    
+    service = GeneratorService()
+    try:
+        # Generate skeleton
+        result = service.generate_skeleton(request.selected_source_ids, title=request.title)
+        
+        # Fetch full project tree
+        project_id = result['project_id']
+        query = """
+        MATCH (p:Project {id: $project_id})
+        OPTIONAL MATCH (p)-[:HAS_TARGET]->(t:TargetNode)
+        OPTIONAL MATCH (t)-[:SUGGESTED_SOURCE]->(s:Slide)
+        WITH p, t, collect(s.id) as suggested_ids
+        ORDER BY t.order
+        RETURN p.id as project_id, p.title as title, p.status as project_status,
+               collect({
+                   id: t.id,
+                   title: t.title,
+                   rationale: t.rationale,
+                   status: t.status,
+                   order: t.order,
+                   is_suggestion: true,
+                   suggested_source_ids: suggested_ids,
+                   source_refs: [],
+                   parent_id: null,
+                   content_markdown: null
+               }) as nodes
+        """
+        
+        tree_result = neo4j_client.execute_query(query, {"project_id": project_id})
+        
+        if not tree_result:
+            raise HTTPException(status_code=500, detail="Failed to fetch generated project")
+        
+        return {
+            "project_id": project_id,
+            "title": tree_result[0]["title"],
+            "status": tree_result[0]["project_status"],
+            "nodes": tree_result[0]["nodes"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        service.close()
+
+
+@app.post("/draft/node/accept")
+def accept_suggested_node(node_id: str):
+    """
+    Accept an AI-suggested node, converting it to a permanent draft.
+    
+    This:
+    1. Changes status from 'suggestion' to 'draft'
+    2. Converts SUGGESTED_SOURCE relationships to DERIVED_FROM
+    3. Makes the suggestion permanent
+    """
+    query = """
+    MATCH (t:TargetNode {id: $node_id})
+    WHERE t.status = 'suggestion'
+    
+    // Update status
+    SET t.status = 'draft'
+    
+    // Convert relationships
+    WITH t
+    OPTIONAL MATCH (t)-[r:SUGGESTED_SOURCE]->(s:Slide)
+    DELETE r
+    CREATE (t)-[:DERIVED_FROM]->(s)
+    
+    RETURN t.id as id, t.status as status, count(s) as sources_accepted
+    """
+    
+    results = neo4j_client.execute_query(query, {"node_id": node_id})
+    
+    if not results:
+        raise HTTPException(status_code=404, detail="Node not found or already accepted")
+    
+    return {
+        "status": "accepted",
+        "node_id": results[0]["id"],
+        "new_status": results[0]["status"],
+        "sources_linked": results[0]["sources_accepted"]
+    }
 
 if __name__ == "__main__":
     import uvicorn

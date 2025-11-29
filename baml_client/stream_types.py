@@ -30,6 +30,7 @@ class Concept(BaseModel):
     name: typing.Optional[str] = None
     description: typing.Optional[str] = None
     related_terms: typing.List[str]
+    salience: typing.Optional[float] = None
 
 class LearningObjective(BaseModel):
     description: typing.Optional[str] = None

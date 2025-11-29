@@ -48,6 +48,7 @@ class Concept(BaseModel):
     name: str
     description: str
     related_terms: typing.List[str]
+    salience: float
 
 class LearningObjective(BaseModel):
     description: str

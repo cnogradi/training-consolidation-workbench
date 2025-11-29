@@ -176,17 +176,26 @@ def build_knowledge_graph(
         try:
             content = llm.extract_concepts(slide_text)
             
-            # Create Concept Nodes & Links
+            # Create Concept Nodes & Links with salience scores
             for concept in content.concepts:
+                # Get salience score, default to 0.5 if not provided
+                salience = getattr(concept, 'salience', 0.5)
+                
                 neo4j_client.execute_query(
                     """
                     MERGE (con:Concept {name: $name})
                     SET con.description = $desc
                     WITH con
                     MATCH (sl:Slide {id: $slide_id})
-                    MERGE (sl)-[:TEACHES]->(con)
+                    MERGE (sl)-[t:TEACHES]->(con)
+                    SET t.salience = $salience
                     """,
-                    {"name": concept.name, "desc": concept.description, "slide_id": slide_id}
+                    {
+                        "name": concept.name, 
+                        "desc": concept.description, 
+                        "slide_id": slide_id,
+                        "salience": salience
+                    }
                 )
         except Exception as e:
             context.log.error(f"Concept extraction failed for slide {slide_id}: {e}")
@@ -203,6 +212,36 @@ def build_knowledge_graph(
             )
         except Exception as e:
             context.log.error(f"Vector indexing failed for slide {slide_id}: {e}")
+
+    # 6. Aggregate Concepts to Section Summaries
+    context.log.info("Aggregating concepts to Section summaries...")
+    try:
+        # Aggregate concepts from Slides to Sections using salience-weighted ranking
+        # Scoped to this course only
+        aggregation_query = """
+        MATCH (c:Course {id: $course_id})-[:HAS_SECTION]->(sec:Section)
+        OPTIONAL MATCH (sec)-[:HAS_SECTION*0..]->(child:Section)
+        OPTIONAL MATCH (child)-[:HAS_SLIDE]->(s:Slide)
+        OPTIONAL MATCH (s)-[t:TEACHES]->(con:Concept)
+        WITH sec, con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
+        WHERE concept_name IS NOT NULL
+        WITH sec, concept_name, total_salience
+        ORDER BY sec.id, total_salience DESC
+        WITH sec, collect({name: concept_name, salience: total_salience}) as concepts
+        SET sec.concept_summary = [x IN concepts[0..5] | x.name]
+        RETURN sec.id as section_id, sec.title as section_title, sec.concept_summary as summary
+        """
+        
+        results = neo4j_client.execute_query(aggregation_query, {"course_id": course_id})
+        
+        for row in results:
+            context.log.info(f"Section '{row['section_title']}': {row['summary']}")
+        
+        context.log.info(f"Aggregated concepts for {len(results)} sections")
+        
+    except Exception as e:
+        context.log.error(f"Concept aggregation failed: {e}")
+        # Don't fail the entire job if aggregation fails
 
     neo4j_client.close()
     return {"course_id": course_id, "status": "processed"}

@@ -69,7 +69,7 @@ class ConceptAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("Concept")
-        self._properties: typing.Set[str] = set([  "name",  "description",  "related_terms",  ])
+        self._properties: typing.Set[str] = set([  "name",  "description",  "related_terms",  "salience",  ])
         self._props = ConceptProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -108,6 +108,10 @@ class ConceptProperties:
     @property
     def related_terms(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("related_terms"))
+    
+    @property
+    def salience(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("salience"))
     
     
 
