@@ -306,7 +306,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                         <button
                                             onClick={handleSynthesize}
                                             disabled={synthesizing || items.length === 0}
-                                            className="bg-brand-teal text-white text-xs font-medium px-3 py-1.5 rounded-md flex items-center gap-1.5 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                            className="bg-teal-600 text-white text-xs font-medium px-3 py-1.5 rounded-md flex items-center gap-1.5 hover:bg-teal-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors shadow-sm"
                                         >
                                             {synthesizing ? (
                                                 <span className="animate-pulse">Synthesizing...</span>

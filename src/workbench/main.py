@@ -477,10 +477,13 @@ def get_draft_structure(project_id: str):
 
 # --- C. The Synthesis Module ---
 
+from fastapi import BackgroundTasks
+from src.services.synthesis_service import SynthesisService
+
 @app.post("/synthesis/trigger")
-def trigger_synthesis(request: SynthesisRequest):
+def trigger_synthesis(request: SynthesisRequest, background_tasks: BackgroundTasks):
     """
-    Triggers the DSPy generation logic via Dagster.
+    Triggers the DSPy generation logic via background task.
     """
     # 1. Gather Context - Verify node exists
     query = """
@@ -491,38 +494,16 @@ def trigger_synthesis(request: SynthesisRequest):
     if not results:
         raise HTTPException(status_code=404, detail="Target node not found")
     
-    # 2. Fire and Forget - Trigger Dagster Job
-    try:
-        run_config = {
-            "ops": {
-                "synthesize_node": {  # Assuming op name
-                    "config": {
-                        "target_node_id": request.target_node_id,
-                        "tone": request.tone_instruction
-                    }
-                }
-            }
-        }
-        
-        # Submit job
-        # Note: Job name must match what is defined in Dagster
-        job_name = "synthesize_node_job" 
-        run_id = dagster_client.submit_job_execution(
-            job_name=job_name,
-            run_config=run_config
-        )
-        
-        # Update status to drafting
-        neo4j_client.execute_query("""
-            MATCH (n:TargetNode {id: $id}) SET n.status = 'drafting'
-        """, {"id": request.target_node_id})
-        
-        return {"status": "queued", "run_id": run_id}
-        
-    except DagsterGraphQLClientError as e:
-         raise HTTPException(status_code=500, detail=f"Dagster Error: {str(e)}")
-    except Exception as e:
-         raise HTTPException(status_code=500, detail=str(e))
+    # 2. Update status to drafting
+    neo4j_client.execute_query("""
+        MATCH (n:TargetNode {id: $id}) SET n.status = 'drafting'
+    """, {"id": request.target_node_id})
+    
+    # 3. Trigger Background Task
+    service = SynthesisService()
+    background_tasks.add_task(service.synthesize_node, request.target_node_id, request.tone_instruction)
+    
+    return {"status": "queued", "run_id": "background_task"}
 
 @app.get("/synthesis/status/{run_id}")
 def get_synthesis_status(run_id: str):
