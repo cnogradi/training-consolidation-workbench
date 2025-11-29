@@ -39,7 +39,7 @@ export const api = {
         return res.data;
     },
     getCourseSlides: async (courseId: string) => {
-        const res = await axios.get<{id: string, number: number, text: string}[]>(`${API_URL}/source/course/${courseId}/slides`);
+        const res = await axios.get<{ id: string, number: number, text: string }[]>(`${API_URL}/source/course/${courseId}/slides`);
         return res.data;
     },
     getSlideDetails: async (slideId: string) => {
@@ -67,11 +67,29 @@ export const api = {
         return res.data;
     },
     getSynthesisPreview: async (nodeId: string) => {
-        const res = await axios.get<{content: string, status: string}>(`${API_URL}/synthesis/preview/${nodeId}`);
+        const res = await axios.get<{ content: string, status: string }>(`${API_URL}/synthesis/preview/${nodeId}`);
         return res.data;
     },
     searchConcepts: async (q: string) => {
         const res = await axios.get<string[]>(`${API_URL}/search/concepts`, { params: { q } });
         return res.data;
+    },
+    searchSourceTree: async (request: SearchRequest) => {
+        const res = await axios.post<CourseNode[]>(`${API_URL}/source/search`, request);
+        return res.data;
+    },
+    getFilterOptions: async () => {
+        const res = await axios.get<{ origins: string[], domains: string[], intents: string[], types: string[] }>(`${API_URL}/source/filters`);
+        return res.data;
     }
 };
+
+export interface SearchRequest {
+    query?: string;
+    filters?: {
+        origin?: string;
+        domain?: string;
+        intent?: string;
+        type?: string;
+    };
+}

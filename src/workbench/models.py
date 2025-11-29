@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class ConceptNode(BaseModel):
     name: str
@@ -22,3 +22,7 @@ class TargetDraftNode(BaseModel):
 class SynthesisRequest(BaseModel):
     target_node_id: str
     tone_instruction: str
+
+class SearchRequest(BaseModel):
+    query: Optional[str] = None
+    filters: Dict[str, Any] = {} # domain, origin, intent, type

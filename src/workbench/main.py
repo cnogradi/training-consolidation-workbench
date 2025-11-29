@@ -10,7 +10,7 @@ from src.storage.neo4j import Neo4jClient
 from src.storage.weaviate import WeaviateClient
 from src.storage.minio import MinioClient
 from src.workbench.models import (
-    ConceptNode, SourceSlide, TargetDraftNode, SynthesisRequest
+    ConceptNode, SourceSlide, TargetDraftNode, SynthesisRequest, SearchRequest
 )
 from src.ingestion.assets import BUCKET_NAME
 
@@ -185,6 +185,149 @@ def get_slides_by_concept(name: str):
     """
     results = neo4j_client.execute_query(query, {"name": name})
     return [row["id"] for row in results]
+
+@app.get("/source/filters", response_model=Dict[str, List[str]])
+def get_source_filters():
+    """
+    Returns distinct values for faceted filters.
+    """
+    filters = {
+        "origins": [],
+        "domains": [],
+        "intents": [],
+        "types": []
+    }
+    
+    # Origins (Business Units)
+    res = neo4j_client.execute_query("MATCH (c:Course) RETURN distinct c.business_unit as val ORDER BY val")
+    filters["origins"] = [r["val"] for r in res if r["val"]]
+    
+    # Domains (Mapped to Engineering Discipline)
+    res = neo4j_client.execute_query("MATCH (c:Course) RETURN distinct c.discipline as val ORDER BY val")
+    filters["domains"] = [r["val"] for r in res if r["val"]]
+    
+    # Intents (Pedagogical Intent - currently checking Slide, might be empty if not ingested)
+    res = neo4j_client.execute_query("MATCH (s:Slide) RETURN distinct s.pedagogical_intent as val ORDER BY val")
+    filters["intents"] = [r["val"] for r in res if r["val"]]
+    
+    # Asset Types (Checking Slide, might be empty)
+    res = neo4j_client.execute_query("MATCH (s:Slide) RETURN distinct s.asset_type as val ORDER BY val")
+    filters["types"] = [r["val"] for r in res if r["val"]]
+    
+    return filters
+
+@app.post("/source/search", response_model=List[Dict[str, Any]])
+def search_source_tree(request: SearchRequest):
+    """
+    Advanced search with faceted filters.
+    Returns a pruned tree structure containing only matching nodes.
+    """
+    params = {}
+    
+    # 1. Semantic Search (if query provided)
+    candidate_ids = []
+    if request.query:
+        try:
+            # Weaviate NearText search
+            response = weaviate_client.client.query.get(
+                "SlideText", ["slide_id"]
+            ).with_near_text({
+                "concepts": [request.query]
+            }).with_limit(50).do() # Higher limit for filtering
+            
+            if "data" in response and "Get" in response["data"] and "SlideText" in response["data"]["Get"]:
+                candidate_ids = [item["slide_id"] for item in response["data"]["Get"]["SlideText"]]
+            
+            if not candidate_ids:
+                return [] # No semantic matches
+        except Exception as e:
+            print(f"Weaviate search failed: {e}")
+            # Fallback or return empty? Let's return empty for now if query was explicit
+            return []
+
+    # 2. Build Cypher Query
+    # Base pattern: BusinessUnit -> Course -> Slide
+    query_parts = [
+        "MATCH (c:Course)",
+        "MATCH (c)-[:HAS_SLIDE]->(s:Slide)"
+    ]
+    
+    where_clauses = []
+    
+    # Filter: Origin (Business Unit)
+    if request.filters.get("origin"):
+        # Assuming origin is the Business Unit name stored on Course
+        where_clauses.append("c.business_unit = $origin")
+        params["origin"] = request.filters["origin"]
+        
+    # Filter: Domain (Mapped to Course.discipline)
+    if request.filters.get("domain"):
+        where_clauses.append("c.discipline = $domain")
+        params["domain"] = request.filters["domain"]
+
+    # Filter: Pedagogical Intent
+    if request.filters.get("intent"):
+        where_clauses.append("s.pedagogical_intent = $intent")
+        params["intent"] = request.filters["intent"]
+
+    # Filter: Asset Type
+    if request.filters.get("type") and request.filters["type"] != "All Types":
+        # Case-insensitive match for asset type
+        where_clauses.append("toLower(s.asset_type) = toLower($type)")
+        params["type"] = request.filters["type"]
+
+    # Filter: Candidate IDs from Semantic Search
+    if request.query:
+        where_clauses.append("s.id IN $candidate_ids")
+        params["candidate_ids"] = candidate_ids
+
+    if where_clauses:
+        query_parts.append("WHERE " + " AND ".join(where_clauses))
+
+    # Return structure
+    # We want to reconstruct the tree: BU -> Course -> Slide
+    # Need to fetch concepts for each slide first
+    query_parts.append("""
+    WITH c, s
+    OPTIONAL MATCH (s)-[:TEACHES]->(con:Concept)
+    WITH c, s, collect({name: con.name, domain: con.domain}) as concepts
+    RETURN c.business_unit as bu, 
+           c.id as course_id, 
+           c.title as course_title, 
+           c.discipline as discipline,
+           collect(distinct {
+               id: s.id, 
+               number: s.number, 
+               text: s.text,
+               s3_url: s.s3_url,
+               concepts: [x IN concepts WHERE x.name IS NOT NULL]
+           }) as slides
+    ORDER BY bu, course_title
+    """)
+    
+    final_query = "\n".join(query_parts)
+    
+    results = neo4j_client.execute_query(final_query, params)
+    
+    # 3. Reconstruct Tree
+    tree = {}
+    for row in results:
+        bu = row.get("bu", "Uncategorized")
+        if bu not in tree:
+            tree[bu] = {"name": bu, "type": "BusinessUnit", "children": []}
+            
+        # Add Course
+        course_entry = {
+            "id": row["course_id"],
+            "name": row["course_title"],
+            "type": "Course",
+            "engineering_discipline": row.get("discipline"),
+            "slides": row["slides"], # Direct slides list
+            "has_children": True
+        }
+        tree[bu]["children"].append(course_entry)
+
+    return list(tree.values())
 
 # --- B. The Builder Module ---
 

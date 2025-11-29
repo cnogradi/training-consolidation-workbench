@@ -147,15 +147,23 @@ def build_knowledge_graph(
         slide_id = f"{course_id}_p{page_num}"
         context.log.info(f"Processing Slide {page_num} (ID: {slide_id})")
         
+        # Derive asset type from filename
+        import os
+        filename = manifest["filename"]
+        file_ext = os.path.splitext(filename)[1].upper().replace('.', '')  # e.g., "PPTX"
+        asset_type = file_ext if file_ext in ["PDF", "PPTX", "DOCX", "PPT", "DOC"] else "Unknown"
+        
         # Create Slide Node
         neo4j_client.execute_query(
             """
             MATCH (c:Course {id: $course_id})
             MERGE (sl:Slide {id: $id})
-            SET sl.number = $page_num, sl.text = $text
+            SET sl.number = $page_num, 
+                sl.text = $text,
+                sl.asset_type = $asset_type
             MERGE (c)-[:HAS_SLIDE]->(sl)
             """,
-            {"course_id": course_id, "id": slide_id, "page_num": page_num, "text": slide_text[:500]}
+            {"course_id": course_id, "id": slide_id, "page_num": page_num, "text": slide_text[:500], "asset_type": asset_type}
         )
         
         # Extract Concepts

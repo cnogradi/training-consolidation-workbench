@@ -16,6 +16,7 @@ import { useAppStore } from '../store';
 export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projectId, setProjectId, discipline, refreshTrigger }) => {
     const structure = useAppStore(state => state.structure);
     const fetchStructure = useAppStore(state => state.fetchStructure);
+    const addNode = useAppStore(state => state.addNode);
 
     // Initial Project Creation if needed
     useEffect(() => {
@@ -49,7 +50,10 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
                     <div className="w-2 h-2 rounded-full bg-brand-teal" />
                     <h2 className="font-bold text-slate-800 text-lg">Consolidated Outline</h2>
                 </div>
-                <button className="text-brand-teal hover:bg-brand-teal/10 p-2 rounded-full transition-colors">
+                <button
+                    onClick={() => projectId && addNode(projectId, "New Topic")}
+                    className="text-brand-teal hover:bg-brand-teal/10 p-2 rounded-full transition-colors"
+                >
                     <Plus size={20} />
                 </button>
             </div>
