@@ -125,9 +125,27 @@ def build_knowledge_graph(
     
     from collections import defaultdict
     pages = defaultdict(list)
+    
+    # Logic to handle missing page numbers by chunking
+    current_chunk_page = 1
+    current_chunk_size = 0
+    CHUNK_LIMIT = 1500 # Approx 250-300 words per "slide" if no page breaks
+    
     for el in text_elements:
-        page_num = el.get("metadata", {}).get("page_number", 1)
-        pages[page_num].append(el.get("text", ""))
+        metadata = el.get("metadata", {})
+        text = el.get("text", "")
+        
+        if "page_number" in metadata:
+            # Use explicit page number from extractor
+            page_num = metadata["page_number"]
+            pages[page_num].append(text)
+        else:
+            # Fallback: Assign to synthetic page chunks
+            pages[current_chunk_page].append(text)
+            current_chunk_size += len(text)
+            if current_chunk_size > CHUNK_LIMIT:
+                current_chunk_page += 1
+                current_chunk_size = 0
         
     # Ensure Weaviate Class exists with text vectorizer enabled
     weaviate_client.ensure_class({

@@ -49,6 +49,7 @@ class SynthesisService:
             
             # 2. Get slide text from Weaviate
             slides_content = []
+            print(f"DEBUG: Fetching content for slide IDs: {slide_ids}")
             for slide_id in slide_ids:
                 try:
                     # Weaviate query to get text for specific slide_id
@@ -66,6 +67,8 @@ class SynthesisService:
                     
                     if "data" in response and "Get" in response["data"] and response["data"]["Get"]["SlideText"]:
                         text = response["data"]["Get"]["SlideText"][0]["text"]
+                        print(f"DEBUG: Slide {slide_id} text length: {len(text)}")
+                        print(f"DEBUG: Slide {slide_id} preview: {text[:100]}...")
                         slides_content.append({"id": slide_id, "text": text})
                     else:
                         print(f"Warning: No text found in Weaviate for slide {slide_id}")
