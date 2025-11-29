@@ -21,6 +21,10 @@ export interface TargetDraftNode {
     source_refs: string[];
     status: string;
     content_markdown?: string;
+    // Suggestion fields
+    is_suggestion?: boolean;
+    suggested_source_ids?: string[];
+    rationale?: string;
 }
 
 export interface CourseNode {

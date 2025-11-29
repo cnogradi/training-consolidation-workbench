@@ -429,8 +429,12 @@ def get_draft_structure(project_id: str):
     WHERE (p)-[:HAS_CHILD*0..]->(n)
     OPTIONAL MATCH (parent)-[:HAS_CHILD]->(n)
     OPTIONAL MATCH (n)-[:DERIVED_FROM]->(s:Slide)
+    OPTIONAL MATCH (n)-[:SUGGESTED_SOURCE]->(ss:Slide)
     RETURN n.id as id, n.title as title, n.status as status, n.content_markdown as content, 
-           parent.id as parent_id, collect(s.id) as source_refs
+           n.rationale as rationale,
+           parent.id as parent_id, 
+           collect(distinct s.id) as source_refs,
+           collect(distinct ss.id) as suggested_source_ids
     """
     results = neo4j_client.execute_query(query, {"project_id": project_id})
     
@@ -448,20 +452,26 @@ def get_draft_structure(project_id: str):
             parent_id=None, # Root has no parent
             status=p_row["status"] or "draft",
             content_markdown=None,
-            source_refs=[]
+            source_refs=[],
+            is_suggestion=False,
+            suggested_source_ids=[],
+            rationale=None
         ))
 
     for row in results:
-        # Project node itself might be returned if matched by *0.. 
-        # but if it's :Project and not :TargetNode it might depend on labels.
-        # In create_draft_project we added :TargetNode label to Project too? Yes.
+        # Determine if it's a suggestion based on status
+        is_suggestion = row["status"] == "suggestion"
+        
         nodes.append(TargetDraftNode(
             id=row["id"],
             title=row["title"],
             parent_id=row["parent_id"],
             status=row["status"] or "empty",
             content_markdown=row["content"],
-            source_refs=row["source_refs"]
+            source_refs=row["source_refs"],
+            is_suggestion=is_suggestion,
+            suggested_source_ids=row["suggested_source_ids"],
+            rationale=row["rationale"]
         ))
     return nodes
 

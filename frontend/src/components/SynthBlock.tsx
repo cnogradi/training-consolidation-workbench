@@ -75,7 +75,6 @@ interface SynthBlockProps {
 
 export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     // Handle Drop from Source Browser to Block
-    // We make the "Ingredients" box the specific drop target
     const { isOver, setNodeRef } = useDroppable({
         id: node.id,
         data: { type: 'target', node }
@@ -84,15 +83,25 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     const [instruction, setInstruction] = useState("");
     const [synthesizing, setSynthesizing] = useState(false);
     const [expanded, setExpanded] = useState(true);
-    const [items, setItems] = useState(node.source_refs);
+
+    // Determine effective items (manual sources OR suggested sources)
+    const effectiveItems = node.is_suggestion
+        ? (node.suggested_source_ids || [])
+        : node.source_refs;
+
+    const [items, setItems] = useState(effectiveItems);
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
 
     // Sync local items with props
     useEffect(() => {
-        if (JSON.stringify(items) !== JSON.stringify(node.source_refs)) {
-            setItems(node.source_refs);
+        const currentEffective = node.is_suggestion
+            ? (node.suggested_source_ids || [])
+            : node.source_refs;
+
+        if (JSON.stringify(items) !== JSON.stringify(currentEffective)) {
+            setItems(currentEffective);
         }
-    }, [node.source_refs]);
+    }, [node.source_refs, node.suggested_source_ids, node.is_suggestion]);
 
     // Load thumbnails
     useEffect(() => {
@@ -110,6 +119,9 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     }, [items]);
 
     const handleRemove = async (slideId: string) => {
+        // If it's a suggestion, we can't remove individual slides yet (until accepted)
+        if (node.is_suggestion) return;
+
         const newItems = items.filter(id => id !== slideId);
         setItems(newItems); // Optimistic update
         try {
@@ -139,24 +151,59 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
         }
     };
 
+    const handleAccept = async () => {
+        try {
+            await api.acceptSuggestedNode(node.id);
+            onRefresh();
+        } catch (e) {
+            console.error("Failed to accept suggestion", e);
+            alert("Failed to accept suggestion");
+        }
+    };
+
+    const isSuggestion = node.is_suggestion;
+
     return (
         <div
-            className="bg-white border border-slate-200 rounded-xl transition-all mb-6 shadow-sm group"
+            className={clsx(
+                "border rounded-xl transition-all mb-6 shadow-sm group relative overflow-hidden",
+                isSuggestion
+                    ? "bg-purple-50/50 border-purple-200 border-dashed"
+                    : "bg-white border-slate-200"
+            )}
         >
             {/* Header Row */}
-            <div className="flex items-center p-3 border-b border-slate-100 bg-slate-50/50 rounded-t-xl">
+            <div className={clsx(
+                "flex items-center p-3 border-b rounded-t-xl",
+                isSuggestion ? "border-purple-100 bg-purple-50/80" : "border-slate-100 bg-slate-50/50"
+            )}>
                 <button onClick={() => setExpanded(!expanded)} className="text-slate-400 hover:text-slate-600 mr-2">
                     {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
-                <div className="flex-1">
+                <div className="flex-1 mr-4">
                     <input
                         type="text"
                         defaultValue={node.title}
                         className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none w-full"
+                        readOnly={isSuggestion} // Read-only until accepted
                     />
+                    {node.rationale && (
+                        <div className="text-[10px] text-slate-500 mt-0.5 italic truncate">
+                            {node.rationale}
+                        </div>
+                    )}
                 </div>
-                <div className="flex items-center gap-2">
-                    <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+
+                <div className="flex items-center gap-3">
+                    {/* Suggestion Badge Inline */}
+                    {isSuggestion && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-100 text-purple-700 text-[10px] font-medium border border-purple-200 whitespace-nowrap">
+                            <Sparkles size={10} />
+                            AI Suggestion
+                        </span>
+                    )}
+
+                    <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full whitespace-nowrap">
                         {items.length} Sources
                     </span>
                 </div>
@@ -173,14 +220,19 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                         <div
                             ref={setNodeRef}
                             className={clsx(
-                                "flex-1 min-h-[100px] bg-slate-50 rounded-lg border border-dashed p-2 transition-colors",
-                                isOver ? "border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/20" : "border-slate-200 hover:border-slate-300"
+                                "flex-1 min-h-[100px] rounded-lg border p-2 transition-colors",
+                                isSuggestion
+                                    ? "bg-white/50 border-purple-100 border-dashed"
+                                    : "bg-slate-50 border-dashed border-slate-200",
+                                isOver && !isSuggestion ? "border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/20" : ""
                             )}
                         >
                             {items.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center">
                                     <Sparkles size={16} className="mb-2 opacity-50" />
-                                    <span className="text-xs italic">Drag source slides here</span>
+                                    <span className="text-xs italic">
+                                        {isSuggestion ? "No sources found" : "Drag source slides here"}
+                                    </span>
                                 </div>
                             ) : (
                                 <div className="space-y-2">
@@ -202,46 +254,73 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
 
                     {/* Right: Synthesis (Instruction + Output) */}
                     <div className="flex-1 flex flex-col">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
-                            Synthesis
-                        </div>
+                        {isSuggestion ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-white/50 rounded-lg border border-purple-100 border-dashed">
+                                <Sparkles size={24} className="text-purple-300 mb-3" />
+                                <h4 className="text-sm font-medium text-purple-900 mb-1">AI Suggested Section</h4>
+                                <p className="text-xs text-purple-600 mb-4 max-w-xs">
+                                    Review the suggested sources and rationale. Accept to edit and synthesize.
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => { /* TODO: Reject logic */ }}
+                                        className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                    >
+                                        Reject
+                                    </button>
+                                    <button
+                                        onClick={handleAccept}
+                                        className="px-4 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md shadow-sm transition-colors flex items-center gap-1.5"
+                                    >
+                                        <Sparkles size={12} />
+                                        Accept Suggestion
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
+                                    Synthesis
+                                </div>
 
-                        {/* Output Preview (if exists) */}
-                        {node.content_markdown ? (
-                            <div className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                                <div className="whitespace-pre-wrap text-slate-700 text-sm">{node.content_markdown}</div>
-                            </div>
-                        ) : null}
+                                {/* Output Preview (if exists) */}
+                                {node.content_markdown ? (
+                                    <div className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
+                                        <div className="whitespace-pre-wrap text-slate-700 text-sm">{node.content_markdown}</div>
+                                    </div>
+                                ) : null}
 
-                        {/* Controls */}
-                        <div className="mt-auto bg-slate-50 p-3 rounded-lg border border-slate-200">
-                            <div className="flex items-start gap-2 mb-3">
-                                <MessageSquare size={14} className="text-slate-400 mt-1" />
-                                <textarea
-                                    className="w-full bg-transparent text-xs text-slate-700 resize-none focus:outline-none"
-                                    placeholder="Instructions for AI: e.g. 'Merge these slides, emphasizing safety protocols...'"
-                                    rows={2}
-                                    value={instruction}
-                                    onChange={(e) => setInstruction(e.target.value)}
-                                />
-                            </div>
-                            <div className="flex justify-end">
-                                <button
-                                    onClick={handleSynthesize}
-                                    disabled={synthesizing || items.length === 0}
-                                    className="bg-brand-teal text-white text-xs font-medium px-3 py-1.5 rounded-md flex items-center gap-1.5 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    {synthesizing ? (
-                                        <span className="animate-pulse">Synthesizing...</span>
-                                    ) : (
-                                        <>
-                                            <Sparkles size={12} />
-                                            Synthesize Block
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
+                                {/* Controls */}
+                                <div className="mt-auto bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                    <div className="flex items-start gap-2 mb-3">
+                                        <MessageSquare size={14} className="text-slate-400 mt-1" />
+                                        <textarea
+                                            className="w-full bg-transparent text-xs text-slate-700 resize-none focus:outline-none"
+                                            placeholder="Instructions for AI: e.g. 'Merge these slides, emphasizing safety protocols...'"
+                                            rows={2}
+                                            value={instruction}
+                                            onChange={(e) => setInstruction(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={handleSynthesize}
+                                            disabled={synthesizing || items.length === 0}
+                                            className="bg-brand-teal text-white text-xs font-medium px-3 py-1.5 rounded-md flex items-center gap-1.5 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            {synthesizing ? (
+                                                <span className="animate-pulse">Synthesizing...</span>
+                                            ) : (
+                                                <>
+                                                    <Sparkles size={12} />
+                                                    Synthesize Block
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

@@ -49,7 +49,11 @@ class GeneratorService:
             raise ValueError("No source outlines found for the given IDs")
         
         # Step 2: Call DSPy to generate consolidated plan
+        print("DEBUG: Calling harmonizer...")
         consolidated_sections = self.harmonizer(source_outlines)
+        print(f"DEBUG: Harmonizer returned {len(consolidated_sections)} sections")
+        for s in consolidated_sections:
+            print(f"DEBUG: Section '{s['title']}' has concepts: {s.get('key_concepts')}")
         
         # Step 3: For each target section, find matching slides
         enriched_sections = []
@@ -113,6 +117,10 @@ class GeneratorService:
             
             if "data" in response and "Get" in response["data"]:
                 slides = response["data"]["Get"]["SlideText"]
+                if not slides:
+                    print(f"DEBUG: No slides found for query: '{search_query}' with certainty 0.6")
+                else:
+                    print(f"DEBUG: Found {len(slides)} slides for query: '{search_query}'")
                 return [
                     {
                         'slide_id': s['slide_id'],
