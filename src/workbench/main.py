@@ -222,6 +222,62 @@ def get_source_filters():
     
     return filters
 
+@app.get("/source/heatmap/{term}")
+def get_concept_heatmap(term: str):
+    """
+    Returns heatmap data for a concept term, using salience scores.
+    Output: {
+        "items": { 
+            "course_id_1": { "score": 1.5, "type": "course" },
+            "slide_id_1": { "score": 0.8, "type": "slide" }
+        }
+    }
+    """
+    query = """
+    WITH toLower($term) as term
+    // 1. Find matching concepts (direct & synonyms)
+    MATCH (c:Concept) WHERE toLower(c.name) CONTAINS term
+    WITH c as direct_hit
+    
+    // Find synonyms via CanonicalConcept (if any)
+    OPTIONAL MATCH (direct_hit)-[:ALIGNS_TO]->(cc:CanonicalConcept)<-[:ALIGNS_TO]-(synonym:Concept)
+    
+    // Aggregate all related concepts into a single list
+    WITH collect(distinct direct_hit) + collect(distinct synonym) as all_concepts
+    UNWIND all_concepts as c
+    WITH distinct c WHERE c IS NOT NULL
+    
+    // 2. Find Slides with Salience
+    MATCH (s:Slide)-[r:TEACHES]->(c)
+    // Default salience to 0.5 if missing
+    WITH s, sum(coalesce(r.salience, 0.5)) as total_score
+    
+    // 3. Aggregate to Course
+    MATCH (course:Course)-[:HAS_SLIDE]->(s)
+    
+    RETURN course.id as course_id, s.id as slide_id, total_score as slide_score
+    """
+    
+    results = neo4j_client.execute_query(query, {"term": term})
+    
+    heatmap = {}
+    
+    # Aggregate results
+    for row in results:
+        c_id = row["course_id"]
+        s_id = row["slide_id"]
+        score = row["slide_score"]
+        
+        # Store Slide Score
+        heatmap[s_id] = {"score": score, "type": "slide"}
+        
+        # Aggregate Course Score
+        if c_id not in heatmap:
+            heatmap[c_id] = {"score": 0, "type": "course"}
+        heatmap[c_id]["score"] += score
+        
+    return heatmap
+
 @app.post("/source/search", response_model=List[Dict[str, Any]])
 def search_source_tree(request: SearchRequest):
     """
@@ -303,8 +359,8 @@ def search_source_tree(request: SearchRequest):
     # Need to fetch concepts for each slide first
     query_parts.append("""
     WITH c, s
-    OPTIONAL MATCH (s)-[:TEACHES]->(con:Concept)
-    WITH c, s, collect({name: con.name, domain: con.domain}) as concepts
+    OPTIONAL MATCH (s)-[t:TEACHES]->(con:Concept)
+    WITH c, s, collect({name: con.name, domain: con.domain, salience: t.salience}) as concepts
     RETURN c.business_unit as bu, 
            c.id as course_id, 
            c.title as course_title, 
@@ -330,13 +386,27 @@ def search_source_tree(request: SearchRequest):
         if bu not in tree:
             tree[bu] = {"name": bu, "type": "BusinessUnit", "children": []}
             
+        # Process slides to generate S3 URLs
+        slides = row["slides"]
+        for slide in slides:
+            # Generate S3 URL dynamically as it's not stored in DB
+            try:
+                parts = slide["id"].rsplit("_p", 1)
+                if len(parts) == 2:
+                    c_id = parts[0]
+                    page_num = parts[1]
+                    object_name = f"{c_id}/generated/pages/page_{page_num}.png"
+                    slide["s3_url"] = minio_client.get_presigned_url(BUCKET_NAME, object_name)
+            except Exception as e:
+                print(f"Failed to generate S3 URL for slide {slide['id']}: {e}")
+
         # Add Course
         course_entry = {
             "id": row["course_id"],
             "name": row["course_title"],
             "type": "Course",
             "engineering_discipline": row.get("discipline"),
-            "slides": row["slides"], # Direct slides list
+            "slides": slides, # Direct slides list with populated URLs
             "has_children": True
         }
         tree[bu]["children"].append(course_entry)
