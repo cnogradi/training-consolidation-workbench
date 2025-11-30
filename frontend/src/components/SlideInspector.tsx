@@ -65,9 +65,9 @@ export const SlideInspector: React.FC = () => {
         return (
             <div className="h-full flex flex-col bg-white">
                 {/* Header */}
-                <div className="p-4 border-b border-slate-100 bg-brand-teal/5 shrink-0">
+                <div className="p-4 border-b border-slate-100 bg-teal-50 shrink-0">
                     <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                        <Sparkles size={16} className="text-brand-teal" />
+                        <Sparkles size={16} className="text-teal-600" />
                         Synthesis Inspector
                     </h2>
                     <p className="text-xs text-slate-500 mt-1 font-medium">Full Course Preview</p>
@@ -87,12 +87,12 @@ export const SlideInspector: React.FC = () => {
                             ref={el => nodeRefs.current[node.id] = el}
                             className={clsx(
                                 "bg-white border rounded-lg shadow-sm p-6 transition-all duration-500",
-                                node.id === activeNodeId ? "ring-2 ring-brand-teal shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
+                                node.id === activeNodeId ? "ring-2 ring-teal-600 shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
                             )}
                         >
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 border-b border-slate-100 pb-2 flex justify-between">
                                 <span>Section {index + 1}: {node.title}</span>
-                                {node.id === activeNodeId && <span className="text-brand-teal">Active</span>}
+                                {node.id === activeNodeId && <span className="text-teal-600">Active</span>}
                             </div>
                             
                             {node.content_markdown ? (
@@ -116,7 +116,7 @@ export const SlideInspector: React.FC = () => {
                     <button
                         onClick={handleRender}
                         disabled={rendering}
-                        className="bg-brand-teal text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="bg-teal-600 text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         {rendering ? (
                              <span className="animate-pulse">Starting Job...</span>
@@ -157,7 +157,7 @@ export const SlideInspector: React.FC = () => {
             <div className="p-4 border-b border-slate-100 flex justify-between items-start">
                 <div>
                     <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                        <FileText size={16} className="text-brand-teal" />
+                        <FileText size={16} className="text-teal-600" />
                         Slide Inspector
                     </h2>
                     <p className="text-xs text-slate-500 mt-1 font-mono">{slide.id}</p>
@@ -188,7 +188,7 @@ export const SlideInspector: React.FC = () => {
                         {([...slide.concepts])
                             .sort((a, b) => (b.salience || 0) - (a.salience || 0))
                             .map((c, i) => (
-                            <span key={i} className="text-xs bg-brand-teal/5 text-brand-teal border border-brand-teal/20 px-2 py-1 rounded-md flex items-center gap-2">
+                            <span key={i} className="text-xs bg-teal-50 text-teal-600 border border-teal-100 px-2 py-1 rounded-md flex items-center gap-2">
                                 <span>{c.name}</span>
                                 {c.salience !== undefined && (
                                     <span className={clsx(
