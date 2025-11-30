@@ -26,6 +26,7 @@ export interface TargetDraftNode {
     is_suggestion?: boolean;
     suggested_source_ids?: string[];
     rationale?: string;
+    order?: number;
 }
 
 export interface CourseNode {
@@ -99,6 +100,10 @@ export const api = {
         const res = await axios.post(`${API_URL}/draft/node/accept`, null, {
             params: { node_id: nodeId }
         });
+        return res.data;
+    },
+    triggerRender: async (projectId: string) => {
+        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId });
         return res.data;
     },
 };

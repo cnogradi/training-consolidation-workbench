@@ -17,6 +17,7 @@ class GenerateSectionContent(dspy.Signature):
        - If the user asks for a "section", use standard markdown with headers and paragraphs.
     3. Ensure smooth transitions between topics.
     4. Do not explicitly mention "Slide 1" or "Slide 2" unless necessary for context.
+    5. Output ONLY the markdown content. Do not wrap in JSON or other blocks.
     """
     slide_content: str = dspy.InputField(
         desc="Text content from source slides, labeled by Slide ID"

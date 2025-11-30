@@ -1,15 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { FileText, Image as ImageIcon, Maximize2, XCircle } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { FileText, Image as ImageIcon, Maximize2, XCircle, Sparkles, Download } from 'lucide-react';
 import { useAppStore } from '../store';
 import { api } from '../api';
-import type { SourceSlide } from '../api';
+import type { SourceSlide, TargetDraftNode } from '../api';
 import clsx from 'clsx';
+import ReactMarkdown from 'react-markdown';
 
 export const SlideInspector: React.FC = () => {
     const activeSlideId = useAppStore(state => state.activeSlideId);
+    const activeNodeId = useAppStore(state => state.activeNodeId);
+    const structure = useAppStore(state => state.structure);
+    const projectId = useAppStore(state => state.projectId);
+
     const [slide, setSlide] = useState<SourceSlide | null>(null);
     const [loading, setLoading] = useState(false);
+    const [rendering, setRendering] = useState(false);
 
+    // Refs for scrolling
+    const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+    // Effect for Source Slides
     useEffect(() => {
         if (activeSlideId) {
             setLoading(true);
@@ -17,21 +27,122 @@ export const SlideInspector: React.FC = () => {
                 .then(setSlide)
                 .catch(console.error)
                 .finally(() => setLoading(false));
-        } else {
+        } else if (!activeNodeId) {
+            // Only clear if no active node either
             setSlide(null);
         }
     }, [activeSlideId]);
 
+    // Effect to scroll active synthesized node into view
+    useEffect(() => {
+        if (activeNodeId && !activeSlideId && nodeRefs.current[activeNodeId]) {
+            nodeRefs.current[activeNodeId]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }, [activeNodeId, activeSlideId]);
+
+    const handleRender = async () => {
+        if (!projectId) return;
+        setRendering(true);
+        try {
+            await api.triggerRender(projectId);
+            alert("Render job started in background!");
+        } catch (e) {
+            console.error(e);
+            alert("Failed to trigger render.");
+        } finally {
+            setRendering(false);
+        }
+    };
+
+    // Render Logic
+    // Case 1: Viewing a synthesized node (show ALL nodes)
+    if (activeNodeId && !activeSlideId) {
+        // Filter for nodes that have content (or are the active one) and sort by order
+        const synthesizedNodes = structure
+            .filter(n => n.content_markdown || n.id === activeNodeId) // Show active even if empty? Maybe just those with content
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+        return (
+            <div className="h-full flex flex-col bg-white">
+                {/* Header */}
+                <div className="p-4 border-b border-slate-100 bg-brand-teal/5 shrink-0">
+                    <h2 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        <Sparkles size={16} className="text-brand-teal" />
+                        Synthesis Inspector
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">Full Course Preview</p>
+                </div>
+
+                {/* Markdown Content List */}
+                <div className="flex-1 overflow-y-auto bg-slate-50 p-4 space-y-6 custom-scrollbar">
+                    {synthesizedNodes.length === 0 && (
+                         <div className="text-center text-slate-400 text-xs mt-10 italic">
+                            No synthesized content to display.
+                        </div>
+                    )}
+                    
+                    {synthesizedNodes.map((node, index) => (
+                        <div 
+                            key={node.id} 
+                            ref={el => nodeRefs.current[node.id] = el}
+                            className={clsx(
+                                "bg-white border rounded-lg shadow-sm p-6 transition-all duration-500",
+                                node.id === activeNodeId ? "ring-2 ring-brand-teal shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
+                            )}
+                        >
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3 border-b border-slate-100 pb-2 flex justify-between">
+                                <span>Section {index + 1}: {node.title}</span>
+                                {node.id === activeNodeId && <span className="text-brand-teal">Active</span>}
+                            </div>
+                            
+                            {node.content_markdown ? (
+                                <div className="prose prose-sm max-w-none text-slate-700">
+                                    <ReactMarkdown>{node.content_markdown}</ReactMarkdown>
+                                </div>
+                            ) : (
+                                <div className="text-center text-slate-300 text-xs italic py-4">
+                                    (Content pending...)
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+                
+                {/* Footer / Render Actions */}
+                <div className="p-4 border-t border-slate-100 bg-white shrink-0 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                    <div className="text-[10px] text-slate-400">
+                        {synthesizedNodes.length} sections ready
+                    </div>
+                    <button
+                        onClick={handleRender}
+                        disabled={rendering}
+                        className="bg-brand-teal text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        {rendering ? (
+                             <span className="animate-pulse">Starting Job...</span>
+                        ) : (
+                            <>
+                                <Download size={14} />
+                                Render to File
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+        );
+    }
+    // Case 2: No selection
     if (!activeSlideId) {
         return (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 text-center">
                 <ImageIcon size={48} className="mb-4 opacity-20" />
-                <p className="font-medium">No Slide Selected</p>
-                <p className="text-xs mt-2">Click on any slide in the Source Map or Draft to inspect details.</p>
+                <p className="font-medium">No Item Selected</p>
+                <p className="text-xs mt-2">Click on a source slide or synthesized block to inspect details.</p>
             </div>
         );
     }
 
+    // Case 3: Loading Slide
     if (loading || !slide) {
         return (
             <div className="h-full flex items-center justify-center text-slate-400">

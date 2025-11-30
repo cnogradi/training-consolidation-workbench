@@ -27,6 +27,7 @@ class TargetDraftNode(BaseModel):
     is_suggestion: bool = False
     rationale: Optional[str] = None  # AI-generated rationale for this section
     suggested_source_ids: List[str] = []  # Slide IDs suggested by AI
+    order: Optional[int] = 0 # Display order
 
 
 class SynthesisRequest(BaseModel):
@@ -72,6 +73,9 @@ class SkeletonRequest(BaseModel):
     domain: Optional[str] = Field(None, description="Engineering domain/discipline")
     selected_source_ids: List[str] = Field(description="Source section/course IDs to merge")
 
+
+class RenderRequest(BaseModel):
+    project_id: str
 
 class ProjectTreeResponse(BaseModel):
     """Full project tree structure with all nodes"""

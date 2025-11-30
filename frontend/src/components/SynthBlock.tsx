@@ -285,8 +285,22 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
 
                                 {/* Output Preview (if exists) */}
                                 {node.content_markdown ? (
-                                    <div className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                                        <div className="whitespace-pre-wrap text-slate-700 text-sm">{node.content_markdown}</div>
+                                    <div 
+                                        className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer hover:ring-1 hover:ring-brand-teal/30 transition-all"
+                                        onClick={() => {
+                                            // Set active Node ID (which we'll use in Inspector)
+                                            // We need to ensure we don't conflict with activeSlideId
+                                            // The Inspector currently checks activeSlideId.
+                                            // We might need to clear activeSlideId when setting activeNodeId or handle priority.
+                                            useAppStore.getState().setActiveSlideId(null);
+                                            useAppStore.getState().setActiveNodeId(node.id);
+                                        }}
+                                    >
+                                        <div className="whitespace-pre-wrap text-slate-700 text-sm pointer-events-none">{node.content_markdown}</div>
+                                        <div className="text-[10px] text-brand-teal mt-2 flex items-center gap-1 font-medium">
+                                            <Sparkles size={10} />
+                                            Click to inspect generated content
+                                        </div>
                                     </div>
                                 ) : null}
 

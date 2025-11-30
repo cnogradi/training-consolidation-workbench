@@ -81,9 +81,27 @@ class SynthesisService:
                 self._update_status(target_node_id, 'error', "No content found for source slides")
                 return
 
-            # 3. Call Synthesizer
+            # 3. Call Synthesizer with Retry Logic
             print(f"Synthesizing content from {len(slides_content)} slides...")
-            markdown = self.synthesizer(slides_content, instruction)
+            
+            max_retries = 3
+            markdown = None
+            last_error = None
+            
+            for attempt in range(max_retries):
+                try:
+                    print(f"DEBUG: Synthesis attempt {attempt + 1}/{max_retries}")
+                    markdown = self.synthesizer(slides_content, instruction)
+                    if markdown:
+                        break
+                except Exception as e:
+                    print(f"DEBUG: Attempt {attempt + 1} failed: {e}")
+                    last_error = e
+                    import time
+                    time.sleep(1) # Brief pause before retry
+            
+            if not markdown:
+                raise last_error or Exception("Failed to synthesize content after retries")
             
             # 4. Update Neo4j
             self._update_result(target_node_id, markdown)

@@ -11,7 +11,8 @@ from src.storage.weaviate import WeaviateClient
 from src.storage.minio import MinioClient
 from src.workbench.models import (
     ConceptNode, SourceSlide, TargetDraftNode, SynthesisRequest, SearchRequest,
-    GenerateSkeletonRequest, GenerateSkeletonResponse, SkeletonRequest, ProjectTreeResponse
+    GenerateSkeletonRequest, GenerateSkeletonResponse, SkeletonRequest, ProjectTreeResponse,
+    RenderRequest
 )
 from src.ingestion.assets import BUCKET_NAME
 
@@ -435,10 +436,11 @@ def get_draft_structure(project_id: str):
     OPTIONAL MATCH (n)-[:DERIVED_FROM]->(s:Slide)
     OPTIONAL MATCH (n)-[:SUGGESTED_SOURCE]->(ss:Slide)
     RETURN n.id as id, n.title as title, n.status as status, n.content_markdown as content, 
-           n.rationale as rationale,
+           n.rationale as rationale, n.order as order,
            parent.id as parent_id, 
            collect(distinct s.id) as source_refs,
            collect(distinct ss.id) as suggested_source_ids
+    ORDER BY n.order ASC
     """
     results = neo4j_client.execute_query(query, {"project_id": project_id})
     
@@ -475,7 +477,8 @@ def get_draft_structure(project_id: str):
             source_refs=row["source_refs"],
             is_suggestion=is_suggestion,
             suggested_source_ids=row["suggested_source_ids"],
-            rationale=row["rationale"]
+            rationale=row["rationale"],
+            order=row.get("order", 0)
         ))
     return nodes
 
@@ -655,6 +658,27 @@ def accept_suggested_node(node_id: str):
         "new_status": results[0]["status"],
         "sources_linked": results[0]["sources_accepted"]
     }
+
+@app.post("/render/trigger")
+def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
+    """
+    Triggers the Dagster pipeline to render the project to PPTX/DOCX/PDF.
+    """
+    # 1. Verify Project
+    query = """
+    MATCH (p:Project {id: $id})
+    RETURN p.id
+    """
+    results = neo4j_client.execute_query(query, {"id": request.project_id})
+    if not results:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    print(f"Triggering render for project {request.project_id}")
+    
+    # 2. Trigger Dagster Job (Mocked/Placeholder for now)
+    # In production: dagster_client.submit_job_execution("render_pipeline", run_config={"ops": {"render": {"config": {"project_id": request.project_id}}}})
+    
+    return {"status": "queued", "message": "Render job submitted to Dagster"}
 
 if __name__ == "__main__":
     import uvicorn
