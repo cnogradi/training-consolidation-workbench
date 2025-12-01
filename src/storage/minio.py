@@ -5,18 +5,32 @@ from minio import Minio
 from minio.error import S3Error
 
 class MinioClient:
-    def __init__(self, endpoint=None, access_key=None, secret_key=None, secure=False):
+    def __init__(self, endpoint=None, access_key=None, secret_key=None, secure=False, external_endpoint=None, region=None):
         self.endpoint = endpoint or os.getenv("MINIO_ENDPOINT", "localhost:9000")
         self.access_key = access_key or os.getenv("MINIO_ACCESS_KEY", "minioadmin")
         self.secret_key = secret_key or os.getenv("MINIO_SECRET_KEY", "minioadmin")
         self.secure = secure
+        self.region = region or os.getenv("MINIO_REGION", "us-east-1")
+        self.external_endpoint = external_endpoint or os.getenv("MINIO_EXTERNAL_ENDPOINT", self.endpoint)
         
         self.client = Minio(
             endpoint=self.endpoint,
             access_key=self.access_key,
             secret_key=self.secret_key,
-            secure=self.secure
+            secure=self.secure,
+            region=self.region
         )
+
+        if self.external_endpoint != self.endpoint:
+            self.signer_client = Minio(
+                endpoint=self.external_endpoint,
+                access_key=self.access_key,
+                secret_key=self.secret_key,
+                secure=self.secure,
+                region=self.region
+            )
+        else:
+            self.signer_client = self.client
 
     def ensure_bucket(self, bucket_name: str):
         """Check if bucket exists, otherwise create it."""
@@ -71,10 +85,11 @@ class MinioClient:
         except S3Error as exc:
             print("error occurred.", exc)
             raise
+
     def get_presigned_url(self, bucket_name: str, object_name: str, expires: timedelta = timedelta(hours=1)):
         """Generate a presigned URL for GET request."""
         try:
-            return self.client.presigned_get_object(bucket_name=bucket_name, object_name=object_name, expires=expires)
+            return self.signer_client.presigned_get_object(bucket_name=bucket_name, object_name=object_name, expires=expires)
         except S3Error as exc:
             print("error occurred.", exc)
             raise
