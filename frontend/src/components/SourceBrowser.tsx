@@ -5,6 +5,7 @@ import type { CourseNode, SourceSlide } from '../api';
 import { useDraggable } from '@dnd-kit/core';
 import { useAppStore } from '../store';
 import { useSelectionStore } from '../stores/selectionStore';
+import { SidebarActionPanel } from './SidebarActionPanel';
 import clsx from 'clsx';
 
 interface SourceBrowserProps {
@@ -102,7 +103,7 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-white">
+        <div className="flex flex-col h-full bg-white relative">
             {/* Header & Search */}
             <div className="p-4 border-b border-slate-100 bg-white z-10 space-y-3">
                 <div className="flex items-center justify-between text-slate-800">
@@ -199,7 +200,7 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
             </div>
 
             {/* Tree View */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar pb-24">
                 {tree.length === 0 && (
                     <div className="text-center text-slate-400 text-xs mt-10 italic">
                         No content found.
@@ -210,6 +211,9 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
                     <BusinessUnitNode key={bu.name} node={bu} heatmapData={heatmapData} heatmapMode={heatmapMode} searchQuery={searchQuery} />
                 ))}
             </div>
+
+            {/* Selection Action Panel - Moved inside SourceBrowser */}
+            <SidebarActionPanel />
         </div>
     );
 };

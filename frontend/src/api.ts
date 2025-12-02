@@ -39,6 +39,12 @@ export interface CourseNode {
     has_children?: boolean;
 }
 
+export interface CourseSection {
+    id: string;
+    title: string;
+    concepts: string[];
+}
+
 export const api = {
     getSourceTree: async (discipline?: string) => {
         const params = discipline ? { engineering_discipline: discipline } : {};
@@ -47,6 +53,10 @@ export const api = {
     },
     getCourseSlides: async (courseId: string) => {
         const res = await axios.get<{ id: string, number: number, text: string }[]>(`${API_URL}/source/course/${courseId}/slides`);
+        return res.data;
+    },
+    getCourseSections: async (courseId: string) => {
+        const res = await axios.get<CourseSection[]>(`${API_URL}/source/course/${courseId}/sections`);
         return res.data;
     },
     getSlideDetails: async (slideId: string) => {

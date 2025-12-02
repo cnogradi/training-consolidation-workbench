@@ -25,6 +25,9 @@ interface AppState {
     setHeatmapMode: (mode: boolean) => void;
     setSearchQuery: (query: string) => void;
     setHeatmapData: (data: Record<string, { score: number, type: string }>) => void;
+    // Staging State
+    stagingMode: boolean;
+    setStagingMode: (mode: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -39,6 +42,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     searchQuery: '',
     heatmapData: {},
 
+    // Staging State
+    stagingMode: false,
+
     setDiscipline: (d) => set({ discipline: d, projectId: null, structure: [] }),
     setProjectId: (id) => set({ projectId: id }),
     setActiveNodeId: (id) => set({ activeNodeId: id }),
@@ -47,6 +53,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     setHeatmapMode: (mode) => set({ heatmapMode: mode }),
     setSearchQuery: (query) => set({ searchQuery: query }),
     setHeatmapData: (data) => set({ heatmapData: data }),
+    setStagingMode: (mode) => set({ stagingMode: mode }),
 
     fetchStructure: async () => {
         const { projectId } = get();

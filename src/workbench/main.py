@@ -104,6 +104,29 @@ def get_course_slides(course_id: str):
     results = neo4j_client.execute_query(query, {"course_id": course_id})
     return results
 
+@app.get("/source/course/{course_id}/sections", response_model=List[Dict[str, Any]])
+def get_course_sections(course_id: str):
+    """
+    Returns sections for a specific course, including concept summaries.
+    """
+    query = """
+    MATCH (c:Course {id: $course_id})-[:HAS_SECTION]->(s:Section)
+    RETURN s.id as id, s.title as title, s.concept_summary as concepts
+    ORDER BY s.id
+    """
+    results = neo4j_client.execute_query(query, {"course_id": course_id})
+    
+    # Ensure concepts is a list
+    formatted_results = []
+    for row in results:
+        formatted_results.append({
+            "id": row["id"],
+            "title": row["title"],
+            "concepts": row["concepts"] if row["concepts"] else []
+        })
+        
+    return formatted_results
+
 @app.get("/source/slide/{slide_id}", response_model=SourceSlide)
 def get_slide_details(slide_id: str):
     """
