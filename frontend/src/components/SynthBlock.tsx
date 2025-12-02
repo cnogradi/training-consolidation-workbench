@@ -162,6 +162,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     };
 
     const isSuggestion = node.is_suggestion;
+    const isUnassigned = node.title === "Unassigned / For Review";
 
     return (
         <div
@@ -169,13 +170,16 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                 "border rounded-xl transition-all mb-6 shadow-sm group relative overflow-hidden",
                 isSuggestion
                     ? "bg-purple-50/50 border-purple-200 border-dashed"
-                    : "bg-white border-slate-200"
+                    : isUnassigned
+                        ? "bg-slate-100 border-slate-300 border-dashed bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#e2e8f0_10px,#e2e8f0_20px)]"
+                        : "bg-white border-slate-200"
             )}
         >
             {/* Header Row */}
             <div className={clsx(
                 "flex items-center p-3 border-b rounded-t-xl",
-                isSuggestion ? "border-purple-100 bg-purple-50/80" : "border-slate-100 bg-slate-50/50"
+                isSuggestion ? "border-purple-100 bg-purple-50/80" :
+                    isUnassigned ? "border-slate-300 bg-slate-200" : "border-slate-100 bg-slate-50/50"
             )}>
                 <button onClick={() => setExpanded(!expanded)} className="text-slate-400 hover:text-slate-600 mr-2">
                     {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -185,7 +189,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                         type="text"
                         defaultValue={node.title}
                         className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none w-full"
-                        readOnly={isSuggestion} // Read-only until accepted
+                        readOnly={isSuggestion || isUnassigned}
                     />
                     {node.rationale && (
                         <div className="text-[10px] text-slate-500 mt-0.5 italic truncate">
@@ -202,6 +206,11 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                             AI Suggestion
                         </span>
                     )}
+                    {isUnassigned && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-slate-300 text-slate-700 text-[10px] font-medium border border-slate-400 whitespace-nowrap">
+                            Parking Lot
+                        </span>
+                    )}
 
                     <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full whitespace-nowrap">
                         {items.length} Sources
@@ -214,7 +223,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                     {/* Left: Ingredients (Source Stack) */}
                     <div className="w-1/3 flex flex-col border-r border-slate-100 pr-6">
                         <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
-                            Ingredients
+                            {isUnassigned ? "Unused Slides" : "Ingredients"}
                         </div>
 
                         <div
@@ -223,7 +232,9 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                 "flex-1 min-h-[100px] rounded-lg border p-2 transition-colors",
                                 isSuggestion
                                     ? "bg-white/50 border-purple-100 border-dashed"
-                                    : "bg-slate-50 border-dashed border-slate-200",
+                                    : isUnassigned
+                                        ? "bg-white/80 border-slate-300 border-dashed"
+                                        : "bg-slate-50 border-dashed border-slate-200",
                                 isOver && !isSuggestion ? "border-brand-teal bg-brand-teal/5 ring-2 ring-brand-teal/20" : ""
                             )}
                         >
@@ -231,7 +242,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center">
                                     <Sparkles size={16} className="mb-2 opacity-50" />
                                     <span className="text-xs italic">
-                                        {isSuggestion ? "No sources found" : "Drag source slides here"}
+                                        {isSuggestion ? "No sources found" : isUnassigned ? "All slides assigned!" : "Drag source slides here"}
                                     </span>
                                 </div>
                             ) : (
@@ -277,6 +288,25 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                     </button>
                                 </div>
                             </div>
+                        ) : isUnassigned ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
+                                <div className="text-slate-400 mb-4">
+                                    <p className="font-medium text-sm">Review Unassigned Slides</p>
+                                    <p className="text-xs mt-1 max-w-xs mx-auto">
+                                        These slides were not used in the generated curriculum. Drag them to other sections if needed, or clear them.
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        // Clear all items
+                                        items.forEach(id => handleRemove(id));
+                                    }}
+                                    className="px-4 py-2 text-xs font-medium text-red-600 bg-white border border-red-200 hover:bg-red-50 rounded-md shadow-sm transition-colors flex items-center gap-2"
+                                >
+                                    <X size={14} />
+                                    Clear All Unassigned
+                                </button>
+                            </div>
                         ) : (
                             <>
                                 <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
@@ -285,7 +315,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
 
                                 {/* Output Preview (if exists) */}
                                 {node.content_markdown ? (
-                                    <div 
+                                    <div
                                         className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer hover:ring-1 hover:ring-brand-teal/30 transition-all"
                                         onClick={() => {
                                             // Set active Node ID (which we'll use in Inspector)

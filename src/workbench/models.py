@@ -25,6 +25,7 @@ class TargetDraftNode(BaseModel):
     
     # Fields for suggestion workflow
     is_suggestion: bool = False
+    is_unassigned: bool = False # Flag for "Unassigned / For Review" section
     rationale: Optional[str] = None  # AI-generated rationale for this section
     suggested_source_ids: List[str] = []  # Slide IDs suggested by AI
     order: Optional[int] = 0 # Display order

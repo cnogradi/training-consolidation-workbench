@@ -69,13 +69,60 @@ class GeneratorService:
                 'suggested_slides': suggested_slides
             })
         
-        # Step 4: Create Project and persist to Neo4j
+        # Step 4: Calculate Unassigned Slides (Set Difference)
+        # Get all available slides from the source courses
+        all_source_slides = self._fetch_all_slides_for_courses(source_course_ids)
+        all_slide_ids = set(s['id'] for s in all_source_slides)
+        
+        # Get all assigned slides
+        assigned_slide_ids = set()
+        for section in enriched_sections:
+            for slide in section.get('suggested_slides', []):
+                assigned_slide_ids.add(slide['slide_id'])
+                
+        # Calculate difference
+        unassigned_ids = all_slide_ids - assigned_slide_ids
+        
+        # Create "Unassigned" section if there are leftovers
+        if unassigned_ids:
+            print(f"DEBUG: Found {len(unassigned_ids)} unassigned slides")
+            # We need text previews for these. We can get them from all_source_slides
+            unassigned_slides_data = [
+                {
+                    'slide_id': s['id'],
+                    'text_preview': s['text'][:100] + "..."
+                }
+                for s in all_source_slides if s['id'] in unassigned_ids
+            ]
+            
+            enriched_sections.append({
+                'title': "Unassigned / For Review",
+                'rationale': "Slides available in source material but not explicitly assigned to a specific section by the AI.",
+                'key_concepts': [],
+                'suggested_slides': unassigned_slides_data,
+                'is_unassigned': True  # Flag for frontend styling
+            })
+
+        # Step 5: Create Project and persist to Neo4j
         project_id = self._persist_project(enriched_sections, title=title)
         
         return {
             'project_id': project_id,
             'sections': enriched_sections
         }
+
+    def _fetch_all_slides_for_courses(self, course_ids: List[str]) -> List[Dict]:
+        """Fetch all slides for the given list of course IDs"""
+        if not course_ids:
+            return []
+            
+        query = """
+        MATCH (c:Course)-[:HAS_SLIDE]->(s:Slide)
+        WHERE c.id IN $course_ids
+        RETURN s.id as id, s.text as text
+        """
+        results = self.neo4j_client.execute_query(query, {"course_ids": course_ids})
+        return results
     
     def _fetch_source_outlines(self, source_ids: List[str]) -> tuple:
         """
