@@ -108,34 +108,40 @@ def get_course_slides(course_id: str):
 def get_course_sections(course_id: str):
     """
     Returns ALL sections (including nested subsections) for a specific course.
-    Since concept_summary might not be populated, we'll fetch the top concepts from the course.
+    For each section, we try to fetch concepts from slides that belong to that section.
+    If no section-specific concepts found, fall back to course-level concepts.
     """
-    # First get all sections
+    # First try to get section-specific concepts
     sections_query = """
     MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
+    OPTIONAL MATCH (s)-[:CONTAINS]->(sl:Slide)-[t:TEACHES]->(con:Concept)
+    WHERE coalesce(t.salience, 0) >= 0.5
+    WITH s, con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
+    ORDER BY s.id, total_salience DESC
+    WITH s, collect(concept_name)[0..10] as section_concepts
     RETURN s.id as id, 
            s.title as title, 
            s.level as level,
-           coalesce(s.concept_summary, []) as concept_summary
+           section_concepts as concepts
     ORDER BY s.id
     """
     sections = neo4j_client.execute_query(sections_query, {"course_id": course_id})
     
-    # Get top concepts from course slides
-    concepts_query = """
+    # Get course-level concepts as fallback
+    course_concepts_query = """
     MATCH (c:Course {id: $course_id})-[:HAS_SLIDE]->(sl:Slide)-[t:TEACHES]->(con:Concept)
     WHERE coalesce(t.salience, 0) >= 0.5
     WITH con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
     ORDER BY total_salience DESC
-    RETURN collect(concept_name)[0..10] as top_concepts
+    RETURN collect(concept_name)[0..10] as course_concepts
     """
-    concept_result = neo4j_client.execute_query(concepts_query, {"course_id": course_id})
-    course_concepts = concept_result[0]["top_concepts"] if concept_result else []
+    course_result = neo4j_client.execute_query(course_concepts_query, {"course_id": course_id})
+    course_concepts = course_result[0]["course_concepts"] if course_result and course_result[0]["course_concepts"] else []
     
-    # Format results - use concept_summary if available, otherwise use course concepts
+    # Format results - use section concepts if available, otherwise course concepts
     formatted_results = []
     for row in sections:
-        concepts = row["concept_summary"] if row["concept_summary"] else course_concepts
+        concepts = row["concepts"] if row["concepts"] else course_concepts
         formatted_results.append({
             "id": row["id"],
             "title": row["title"],
