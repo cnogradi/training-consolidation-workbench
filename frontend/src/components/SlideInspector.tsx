@@ -76,14 +76,14 @@ export const SlideInspector: React.FC = () => {
                 {/* Markdown Content List */}
                 <div className="flex-1 overflow-y-auto bg-slate-50 p-4 space-y-6 custom-scrollbar">
                     {synthesizedNodes.length === 0 && (
-                         <div className="text-center text-slate-400 text-xs mt-10 italic">
+                        <div className="text-center text-slate-400 text-xs mt-10 italic">
                             No synthesized content to display.
                         </div>
                     )}
-                    
+
                     {synthesizedNodes.map((node, index) => (
-                        <div 
-                            key={node.id} 
+                        <div
+                            key={node.id}
                             ref={el => nodeRefs.current[node.id] = el}
                             className={clsx(
                                 "bg-white border rounded-lg shadow-sm p-6 transition-all duration-500",
@@ -94,7 +94,7 @@ export const SlideInspector: React.FC = () => {
                                 <span>Section {index + 1}: {node.title}</span>
                                 {node.id === activeNodeId && <span className="text-teal-600">Active</span>}
                             </div>
-                            
+
                             {node.content_markdown ? (
                                 <div className="prose prose-sm max-w-none text-slate-700">
                                     <ReactMarkdown>{node.content_markdown}</ReactMarkdown>
@@ -107,7 +107,7 @@ export const SlideInspector: React.FC = () => {
                         </div>
                     ))}
                 </div>
-                
+
                 {/* Footer / Render Actions */}
                 <div className="p-4 border-t border-slate-100 bg-white shrink-0 flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                     <div className="text-[10px] text-slate-400">
@@ -119,7 +119,7 @@ export const SlideInspector: React.FC = () => {
                         className="bg-teal-600 text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         {rendering ? (
-                             <span className="animate-pulse">Starting Job...</span>
+                            <span className="animate-pulse">Starting Job...</span>
                         ) : (
                             <>
                                 <Download size={14} />
@@ -188,18 +188,18 @@ export const SlideInspector: React.FC = () => {
                         {([...slide.concepts])
                             .sort((a, b) => (b.salience || 0) - (a.salience || 0))
                             .map((c, i) => (
-                            <span key={i} className="text-xs bg-teal-50 text-teal-600 border border-teal-100 px-2 py-1 rounded-md flex items-center gap-2">
-                                <span>{c.name}</span>
-                                {c.salience !== undefined && (
-                                    <span className={clsx(
-                                        "font-mono text-[10px] px-1 rounded",
-                                        c.salience > 0.7 ? "bg-teal-100 text-teal-700 font-bold border border-teal-200" : "bg-slate-100 text-slate-500 border border-slate-200"
-                                    )}>
-                                        {c.salience.toFixed(2)}
-                                    </span>
-                                )}
-                            </span>
-                        ))}
+                                <span key={i} className="text-xs bg-teal-50 text-teal-600 border border-teal-100 px-2 py-1 rounded-md flex items-center gap-2">
+                                    <span>{c.name}</span>
+                                    {c.salience !== undefined && (
+                                        <span className={clsx(
+                                            "font-mono text-[10px] px-1 rounded",
+                                            c.salience > 0.7 ? "bg-teal-100 text-teal-700 font-bold border border-teal-200" : "bg-slate-100 text-slate-500 border border-slate-200"
+                                        )}>
+                                            {c.salience.toFixed(2)}
+                                        </span>
+                                    )}
+                                </span>
+                            ))}
                         {slide.concepts.length === 0 && <span className="text-xs text-slate-400 italic">None detected</span>}
                     </div>
                 </div>
@@ -207,7 +207,7 @@ export const SlideInspector: React.FC = () => {
                 {/* Extracted Text */}
                 <div>
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Extracted Text</h3>
-                    <div className="bg-slate-50 p-3 rounded border border-slate-100 text-xs text-slate-600 font-mono whitespace-pre-wrap leading-relaxed">
+                    <div className="bg-slate-50 p-3 rounded border border-slate-100 text-xs text-slate-600 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto custom-scrollbar">
                         {slide.text_preview || <span className="italic opacity-50">No text content extracted.</span>}
                     </div>
                 </div>
