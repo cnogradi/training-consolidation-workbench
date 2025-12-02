@@ -275,35 +275,34 @@ export const StagingArea: React.FC = () => {
                                     >
                                         {/* Course Title */}
                                         <div className={clsx(
-                                            "p-3 border-b flex items-start justify-between",
+                                            "p-3 border-b",
                                             isMaster
                                                 ? "bg-amber-100 border-amber-300"
                                                 : courseIsRelevant
                                                     ? "bg-blue-50 border-blue-200"
                                                     : "bg-gray-100 border-gray-200"
                                         )}>
-                                            <div className="flex-1">
-                                                <h4 className={clsx(
-                                                    "font-bold text-sm flex items-center gap-2",
-                                                    isMaster ? "text-amber-900" : courseIsRelevant ? "text-slate-800" : "text-slate-500"
-                                                )}>
-                                                    {isMaster && <span className="text-lg">🏆</span>}
-                                                    {course.title}
-                                                    {isMaster && <span className="text-xs font-normal text-amber-700">(MASTER)</span>}
-                                                </h4>
-                                                <p className="text-xs text-slate-500 mt-1">
+                                            <h4 className={clsx(
+                                                "font-bold text-sm flex items-center gap-2",
+                                                isMaster ? "text-amber-900" : courseIsRelevant ? "text-slate-800" : "text-slate-500"
+                                            )}>
+                                                {isMaster && <span className="text-lg">🏆</span>}
+                                                {course.title}
+                                            </h4>
+                                            <div className="flex items-center justify-between mt-1">
+                                                <p className="text-xs text-slate-500">
                                                     {course.sections.length} section{course.sections.length !== 1 ? 's' : ''}
                                                 </p>
+                                                {strategy === 'master_outline' && !isMaster && (
+                                                    <button
+                                                        onClick={() => setMasterCourseId(course.id)}
+                                                        className="px-2 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
+                                                        title="Set as master outline"
+                                                    >
+                                                        ⭐ Set as Master
+                                                    </button>
+                                                )}
                                             </div>
-                                            {strategy === 'master_outline' && !isMaster && (
-                                                <button
-                                                    onClick={() => setMasterCourseId(course.id)}
-                                                    className="ml-2 px-3 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors flex-shrink-0"
-                                                    title="Set as master outline"
-                                                >
-                                                    ⭐ Set as Master
-                                                </button>
-                                            )}
                                         </div>
 
                                         {/* Sections List */}
