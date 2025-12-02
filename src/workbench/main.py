@@ -154,7 +154,7 @@ def get_slide_details(slide_id: str):
     return SourceSlide(
         id=row["id"],
         s3_url=s3_url,
-        text_preview=row["text"][:200] if row["text"] else "",
+        text_preview=row["text"] if row["text"] else "",
         concepts=concepts
     )
 
@@ -297,7 +297,7 @@ def search_source_tree(request: SearchRequest):
                 "SlideText", ["slide_id"]
             ).with_near_text({
                 "concepts": [request.query],
-                "certainty": 0.7  # Only return results with >70% relevance (0.0-1.0 scale)
+                "certainty": 0.6  # Lowered to 0.6 to capture relevant matches (e.g. "Assemblies" ~0.68)
             }).with_limit(50).do()
             
             print(f"Weaviate raw response: {response}")
