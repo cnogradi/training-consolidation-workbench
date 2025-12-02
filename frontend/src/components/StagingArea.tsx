@@ -20,8 +20,9 @@ export const StagingArea: React.FC = () => {
     const { setStagingMode, setProjectId } = useAppStore();
     const [groups, setGroups] = useState<StagingGroup[]>([]);
     const [loading, setLoading] = useState(true);
-    const [strategy, setStrategy] = useState<'union' | 'intersection'>('union');
+    const [strategy, setStrategy] = useState<'union' | 'intersection' | 'master_outline'>('union');
     const [sharedConcepts, setSharedConcepts] = useState<Set<string>>(new Set());
+    const [masterCourseId, setMasterCourseId] = useState<string | null>(null);
 
     // Fetch sections for all selected courses
     useEffect(() => {
@@ -124,11 +125,19 @@ export const StagingArea: React.FC = () => {
 
     const handleGenerate = async () => {
         try {
-            const result = await api.generateProjectSkeleton({
+            // Build the payload
+            const payload: any = {
                 title: `Consolidated Curriculum`,
                 domain: null,
                 selected_source_ids: Array.from(selectedSourceIds)
-            });
+            };
+
+            // Add master_course_id if in master outline mode
+            if (strategy === 'master_outline' && masterCourseId) {
+                payload.master_course_id = masterCourseId;
+            }
+
+            const result = await api.generateProjectSkeleton(payload);
 
             // Switch back to consolidation view and load the new project
             setStagingMode(false);
@@ -197,10 +206,35 @@ export const StagingArea: React.FC = () => {
                         >
                             Intersection (Shared Only)
                         </button>
+                        <button
+                            onClick={() => {
+                                setStrategy('master_outline');
+                                setMasterCourseId(null);
+                            }}
+                            className={clsx(
+                                'px-4 py-2 rounded-md text-sm font-medium transition-all border-2',
+                                strategy === 'master_outline'
+                                    ? 'bg-amber-600 text-white border-amber-600'
+                                    : 'bg-white text-slate-700 border-slate-300 hover:border-amber-400 hover:bg-slate-50'
+                            )}
+                            title="Select a master course to use as the base outline structure"
+                        >
+                            🏆 Master Outline
+                        </button>
                     </div>
                     {strategy === 'intersection' && sharedConcepts.size > 0 && (
                         <span className="text-xs text-slate-500">
                             {sharedConcepts.size} shared concepts
+                        </span>
+                    )}
+                    {strategy === 'master_outline' && !masterCourseId && (
+                        <span className="text-xs text-amber-600 font-medium">
+                            ⚠️ Select a master course below
+                        </span>
+                    )}
+                    {strategy === 'master_outline' && masterCourseId && (
+                        <span className="text-xs text-green-600 font-medium">
+                            ✓ Master course selected
                         </span>
                     )}
                 </div>
@@ -221,7 +255,7 @@ export const StagingArea: React.FC = () => {
                         {/* Course Cards */}
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
                             {group.courses.map(course => {
-                                // Check if course has any shared concepts (for intersection mode)
+                                const isMaster = masterCourseId === course.id;
                                 const courseHasSharedConcepts = course.sections.some(s =>
                                     s.concepts?.some(c => sharedConcepts.has(c))
                                 );
@@ -232,27 +266,44 @@ export const StagingArea: React.FC = () => {
                                         key={course.id}
                                         className={clsx(
                                             "border rounded shadow-sm transition-all",
-                                            courseIsRelevant
-                                                ? "border-blue-400 bg-white ring-2 ring-blue-100"
-                                                : "border-gray-300 bg-white opacity-60"
+                                            isMaster
+                                                ? "border-amber-500 bg-amber-50 ring-4 ring-amber-200"
+                                                : courseIsRelevant
+                                                    ? "border-blue-400 bg-white ring-2 ring-blue-100"
+                                                    : "border-gray-300 bg-white opacity-60"
                                         )}
                                     >
                                         {/* Course Title */}
                                         <div className={clsx(
-                                            "p-3 border-b",
-                                            courseIsRelevant
-                                                ? "bg-blue-50 border-blue-200"
-                                                : "bg-gray-100 border-gray-200"
+                                            "p-3 border-b flex items-start justify-between",
+                                            isMaster
+                                                ? "bg-amber-100 border-amber-300"
+                                                : courseIsRelevant
+                                                    ? "bg-blue-50 border-blue-200"
+                                                    : "bg-gray-100 border-gray-200"
                                         )}>
-                                            <h4 className={clsx(
-                                                "font-bold text-sm",
-                                                courseIsRelevant ? "text-slate-800" : "text-slate-500"
-                                            )}>
-                                                {course.title}
-                                            </h4>
-                                            <p className="text-xs text-slate-500 mt-1">
-                                                {course.sections.length} section{course.sections.length !== 1 ? 's' : ''}
-                                            </p>
+                                            <div className="flex-1">
+                                                <h4 className={clsx(
+                                                    "font-bold text-sm flex items-center gap-2",
+                                                    isMaster ? "text-amber-900" : courseIsRelevant ? "text-slate-800" : "text-slate-500"
+                                                )}>
+                                                    {isMaster && <span className="text-lg">🏆</span>}
+                                                    {course.title}
+                                                    {isMaster && <span className="text-xs font-normal text-amber-700">(MASTER)</span>}
+                                                </h4>
+                                                <p className="text-xs text-slate-500 mt-1">
+                                                    {course.sections.length} section{course.sections.length !== 1 ? 's' : ''}
+                                                </p>
+                                            </div>
+                                            {strategy === 'master_outline' && !isMaster && (
+                                                <button
+                                                    onClick={() => setMasterCourseId(course.id)}
+                                                    className="ml-2 px-3 py-1 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors flex-shrink-0"
+                                                    title="Set as master outline"
+                                                >
+                                                    ⭐ Set as Master
+                                                </button>
+                                            )}
                                         </div>
 
                                         {/* Sections List */}
