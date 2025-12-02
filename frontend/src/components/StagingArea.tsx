@@ -220,62 +220,109 @@ export const StagingArea: React.FC = () => {
 
                         {/* Course Cards */}
                         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-                            {group.courses.map(course => (
-                                <div key={course.id} className="border border-gray-300 rounded bg-white shadow-sm">
-                                    {/* Course Title */}
-                                    <div className="bg-gray-100 p-3 border-b border-gray-200">
-                                        <h4 className="font-bold text-sm text-slate-800">{course.title}</h4>
-                                        <p className="text-xs text-slate-500 mt-1">
-                                            {course.sections.length} section{course.sections.length !== 1 ? 's' : ''}
-                                        </p>
-                                    </div>
+                            {group.courses.map(course => {
+                                // Check if course has any shared concepts (for intersection mode)
+                                const courseHasSharedConcepts = course.sections.some(s =>
+                                    s.concepts?.some(c => sharedConcepts.has(c))
+                                );
+                                const courseIsRelevant = strategy === 'union' || courseHasSharedConcepts;
 
-                                    {/* Sections List */}
-                                    <div className="p-3 space-y-2">
-                                        {course.sections.length === 0 ? (
-                                            <p className="text-xs text-slate-400 italic">No sections found</p>
-                                        ) : (
-                                            course.sections.map(section => (
-                                                <div key={section.id} className="pb-2 border-b border-slate-100 last:border-0">
-                                                    <div className="flex items-start gap-2">
-                                                        <ArrowRight size={12} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="text-xs font-medium text-slate-700">
-                                                                {section.title}
-                                                            </p>
-                                                            {/* Concepts */}
-                                                            {section.concepts && section.concepts.length > 0 && (
-                                                                <div className="flex flex-wrap gap-1 mt-1">
-                                                                    {section.concepts.map((concept, i) => {
-                                                                        const isShared = sharedConcepts.has(concept);
-                                                                        const isDimmed = strategy === 'intersection' && !isShared;
-
-                                                                        return (
-                                                                            <span
-                                                                                key={i}
-                                                                                className={clsx(
-                                                                                    'text-[10px] px-1.5 py-0.5 rounded border',
-                                                                                    isDimmed
-                                                                                        ? 'bg-slate-50 text-slate-300 border-slate-200'
-                                                                                        : isShared && strategy === 'intersection'
-                                                                                            ? 'bg-blue-100 text-blue-700 border-blue-300 font-medium'
-                                                                                            : 'bg-slate-100 text-slate-600 border-slate-200'
-                                                                                )}
-                                                                            >
-                                                                                {concept}
-                                                                            </span>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))
+                                return (
+                                    <div
+                                        key={course.id}
+                                        className={clsx(
+                                            "border rounded shadow-sm transition-all",
+                                            courseIsRelevant
+                                                ? "border-blue-400 bg-white ring-2 ring-blue-100"
+                                                : "border-gray-300 bg-white opacity-60"
                                         )}
+                                    >
+                                        {/* Course Title */}
+                                        <div className={clsx(
+                                            "p-3 border-b",
+                                            courseIsRelevant
+                                                ? "bg-blue-50 border-blue-200"
+                                                : "bg-gray-100 border-gray-200"
+                                        )}>
+                                            <h4 className={clsx(
+                                                "font-bold text-sm",
+                                                courseIsRelevant ? "text-slate-800" : "text-slate-500"
+                                            )}>
+                                                {course.title}
+                                            </h4>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                {course.sections.length} section{course.sections.length !== 1 ? 's' : ''}
+                                            </p>
+                                        </div>
+
+                                        {/* Sections List */}
+                                        <div className="p-3 space-y-1">
+                                            {course.sections.length === 0 ? (
+                                                <p className="text-xs text-slate-400 italic">No sections found</p>
+                                            ) : (
+                                                course.sections.map(section => {
+                                                    // Calculate indentation based on level (0 = no indent, 1+ = indent)
+                                                    const indentLevel = section.level || 0;
+                                                    const indentClass = indentLevel > 0 ? `ml-${Math.min(indentLevel * 4, 12)}` : '';
+
+                                                    return (
+                                                        <div
+                                                            key={section.id}
+                                                            className="pb-2 border-b border-slate-100 last:border-0"
+                                                            style={{ marginLeft: `${indentLevel * 16}px` }}
+                                                        >
+                                                            <div className="flex items-start gap-2">
+                                                                <ArrowRight
+                                                                    size={12}
+                                                                    className={clsx(
+                                                                        "mt-0.5 flex-shrink-0",
+                                                                        indentLevel === 0 ? "text-blue-600" : "text-slate-400"
+                                                                    )}
+                                                                />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className={clsx(
+                                                                        "text-xs",
+                                                                        indentLevel === 0
+                                                                            ? "font-bold text-slate-800"
+                                                                            : "font-medium text-slate-700"
+                                                                    )}>
+                                                                        {section.title}
+                                                                    </p>
+                                                                    {/* Concepts */}
+                                                                    {section.concepts && section.concepts.length > 0 && (
+                                                                        <div className="flex flex-wrap gap-1 mt-1">
+                                                                            {section.concepts.map((concept, i) => {
+                                                                                const isShared = sharedConcepts.has(concept);
+                                                                                const isDimmed = strategy === 'intersection' && !isShared;
+
+                                                                                return (
+                                                                                    <span
+                                                                                        key={i}
+                                                                                        className={clsx(
+                                                                                            'text-[10px] px-1.5 py-0.5 rounded border',
+                                                                                            isDimmed
+                                                                                                ? 'bg-slate-50 text-slate-300 border-slate-200'
+                                                                                                : isShared && strategy === 'intersection'
+                                                                                                    ? 'bg-blue-100 text-blue-700 border-blue-300 font-medium'
+                                                                                                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                                                                                        )}
+                                                                                    >
+                                                                                        {concept}
+                                                                                    </span>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 ))}

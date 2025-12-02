@@ -107,22 +107,40 @@ def get_course_slides(course_id: str):
 @app.get("/source/course/{course_id}/sections", response_model=List[Dict[str, Any]])
 def get_course_sections(course_id: str):
     """
-    Returns sections for a specific course, including concept summaries.
+    Returns ALL sections (including nested subsections) for a specific course.
+    Since concept_summary might not be populated, we'll fetch the top concepts from the course.
     """
-    query = """
-    MATCH (c:Course {id: $course_id})-[:HAS_SECTION]->(s:Section)
-    RETURN s.id as id, s.title as title, s.concept_summary as concepts
+    # First get all sections
+    sections_query = """
+    MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
+    RETURN s.id as id, 
+           s.title as title, 
+           s.level as level,
+           coalesce(s.concept_summary, []) as concept_summary
     ORDER BY s.id
     """
-    results = neo4j_client.execute_query(query, {"course_id": course_id})
+    sections = neo4j_client.execute_query(sections_query, {"course_id": course_id})
     
-    # Ensure concepts is a list
+    # Get top concepts from course slides
+    concepts_query = """
+    MATCH (c:Course {id: $course_id})-[:HAS_SLIDE]->(sl:Slide)-[t:TEACHES]->(con:Concept)
+    WHERE coalesce(t.salience, 0) >= 0.5
+    WITH con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
+    ORDER BY total_salience DESC
+    RETURN collect(concept_name)[0..10] as top_concepts
+    """
+    concept_result = neo4j_client.execute_query(concepts_query, {"course_id": course_id})
+    course_concepts = concept_result[0]["top_concepts"] if concept_result else []
+    
+    # Format results - use concept_summary if available, otherwise use course concepts
     formatted_results = []
-    for row in results:
+    for row in sections:
+        concepts = row["concept_summary"] if row["concept_summary"] else course_concepts
         formatted_results.append({
             "id": row["id"],
             "title": row["title"],
-            "concepts": row["concepts"] if row["concepts"] else []
+            "level": row.get("level", 0),
+            "concepts": concepts
         })
         
     return formatted_results

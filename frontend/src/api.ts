@@ -42,6 +42,7 @@ export interface CourseNode {
 export interface CourseSection {
     id: string;
     title: string;
+    level?: number;
     concepts: string[];
 }
 
