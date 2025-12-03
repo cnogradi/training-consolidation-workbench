@@ -56,16 +56,36 @@ def process_course_artifact(context: AssetExecutionContext, minio: MinioResource
         except Exception:
             context.log.warning("No metadata.json found for this course.")
 
-        # 1. Render Images (Slides/Pages)
-        images = []
-        if filename.lower().endswith(".pdf"):
-            images = render_pdf_pages(file_path)
-        elif filename.lower().endswith((".pptx", ".ppt")):
-            images = render_pptx_slides(file_path)
-        elif filename.lower().endswith((".docx", ".doc")):
-            # DOCX files are rendered same way as PPTX (convert to PDF first)
-            images = render_pptx_slides(file_path)  # This function works for any Office doc
+        # 1. Prepare File for Processing (Convert to PDF if needed)
+        # We convert DOCX to PDF first because Unstructured extracts page numbers reliably from PDF.
+        # For PPTX, we try original file first (as it usually has page numbers), but fallback to PDF if needed.
+        processing_file_path = file_path
+        is_converted_pdf = False
         
+        # Determine if conversion is needed (Force for DOCX)
+        if filename.lower().endswith((".docx", ".doc")):
+            try:
+                # We use the temp_dir for the converted PDF
+                from src.ingestion.rendering import convert_to_pdf
+                context.log.info(f"Converting {filename} to PDF for reliable page extraction...")
+                processing_file_path = convert_to_pdf(file_path, temp_dir)
+                is_converted_pdf = True
+                context.log.info(f"Conversion successful: {processing_file_path}")
+            except Exception as e:
+                context.log.error(f"PDF conversion failed: {e}. Falling back to original file.")
+                processing_file_path = file_path
+
+        # 2. Render Images (Slides/Pages)
+        images = []
+        try:
+            if processing_file_path.lower().endswith(".pdf"):
+                images = render_pdf_pages(processing_file_path)
+            elif filename.lower().endswith((".pptx", ".ppt", ".docx", ".doc")):
+                # Fallback if conversion failed or if it's a PPTX (we render PPTX via PDF conversion internally anyway)
+                images = render_pptx_slides(file_path)
+        except Exception as e:
+            context.log.error(f"Image rendering failed: {e}")
+
         image_urls = {}
         for i, img in enumerate(images):
             page_num = i + 1
@@ -78,17 +98,37 @@ def process_course_artifact(context: AssetExecutionContext, minio: MinioResource
             image_urls[page_num] = url
             context.log.info(f"Uploaded page {page_num} image")
 
-        # 2. Extract Text & Embedded Images
+        # 3. Extract Text & Embedded Images
         elements = []
         embedded_images_map = {}
         extraction_metadata = {}
         try:
             with tempfile.TemporaryDirectory() as temp_extract_dir:
-                elements = extract_text_and_metadata(
-                    file_path, 
-                    extract_images=True, 
-                    image_output_dir=temp_extract_dir
-                )
+                try:
+                    # Use the (potentially converted) PDF for extraction
+                    elements = extract_text_and_metadata(
+                        processing_file_path, 
+                        extract_images=True, 
+                        image_output_dir=temp_extract_dir
+                    )
+                except Exception as extract_err:
+                    # Fallback for PPTX: If direct extraction failed, try converting to PDF and retrying
+                    if filename.lower().endswith((".pptx", ".ppt")) and not is_converted_pdf:
+                        context.log.warning(f"PPTX extraction failed: {extract_err}. Retrying with PDF conversion...")
+                        try:
+                            from src.ingestion.rendering import convert_to_pdf
+                            pdf_path = convert_to_pdf(file_path, temp_dir) # Use main temp_dir for PDF file
+                            elements = extract_text_and_metadata(
+                                pdf_path,
+                                extract_images=True,
+                                image_output_dir=temp_extract_dir
+                            )
+                            context.log.info("Fallback PDF extraction successful.")
+                        except Exception as fallback_err:
+                            context.log.error(f"Fallback PDF extraction also failed: {fallback_err}")
+                            raise extract_err # Raise original error
+                    else:
+                        raise extract_err
                 
                 # Upload extracted embedded images
                 for img_filename in os.listdir(temp_extract_dir):

@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any, Dict
 from dagster import asset, AssetExecutionContext
 from src.ingestion.assets import CourseArtifactConfig, course_files_partition
@@ -40,7 +41,9 @@ def build_knowledge_graph(
     weaviate: WeaviateResource
 ):
     """
-    Takes the manifest from ingestion, runs semantic extraction, and populates the graph.
+    Ingests documents into Neo4j using a Two-Pass strategy:
+    1. Create Nodes: Extract Structure (Sections) and Content (Slides) independently.
+    2. Link & Roll-up: Connect Sections to Slides via page numbers, then roll up Concepts.
     """
     manifest = process_course_artifact
     course_id = manifest["course_id"]
@@ -62,15 +65,34 @@ def build_knowledge_graph(
             text_elements = json.load(f)
             
     # 3. Reconstruct Full Text for Outline
-    # Simple concatenation of text elements
-    full_text = "\n".join([el.get("text", "") for el in text_elements if el.get("text")])
+    # 3. Reconstruct Full Text for Outline with Page Markers
+    full_text_parts = []
+    current_page = -1
     
+    for el in text_elements:
+        text = el.get("text", "")
+        if not text:
+            continue
+            
+        page_num = el.get("metadata", {}).get("page_number")
+        
+        # If we encounter a new page number, add a marker
+        if page_num is not None and page_num != current_page:
+            full_text_parts.append(f"\n--- Page {page_num} ---\n")
+            current_page = page_num
+            
+        full_text_parts.append(text)
+        
+    full_text = "\n".join(full_text_parts)
+    
+    # --- PASS 1: CREATE NODES ---
+
     # 4. Extract Outline & Create Course/Section Nodes
-    context.log.info("Extracting Outline...")
+    context.log.info("Extracting Outline (Structure)...")
     try:
         outline = llm.extract_outline(full_text)
         
-        # Create Course Node with Metadata
+        # Create Course Node
         metadata = manifest.get("metadata", {})
         neo4j_client.execute_query(
             """
@@ -97,40 +119,48 @@ def build_knowledge_graph(
             }
         )
         
-        # Create Sections recursively
+        # Create Sections recursively with PAGE RANGES
         def create_section_nodes(sections, parent_id):
             for i, sec in enumerate(sections):
                 sec_id = f"{parent_id}_s{i}"
                 neo4j_client.execute_query(
                     """
                     MERGE (s:Section {id: $id}) 
-                    SET s.title = $title, s.level = $level
+                    SET s.title = $title, 
+                        s.level = $level,
+                        s.start_page = $start_page,
+                        s.end_page = $end_page
                     WITH s
                     MATCH (p {id: $parent_id})
                     MERGE (p)-[:HAS_SECTION]->(s)
                     """,
-                    {"id": sec_id, "title": sec.title, "level": sec.level, "parent_id": parent_id}
+                    {
+                        "id": sec_id, 
+                        "title": sec.title, 
+                        "level": sec.level, 
+                        "parent_id": parent_id,
+                        # Fallback to 0 if BAML misses start_page, usually handled in prompt
+                        "start_page": getattr(sec, 'start_page', 0),
+                        "end_page": getattr(sec, 'end_page', None) 
+                    }
                 )
                 create_section_nodes(sec.subsections, sec_id)
                 
         create_section_nodes(outline.sections, course_id)
-        context.log.info("Outline Graph Created.")
+        context.log.info("Outline Structure Created.")
         
     except Exception as e:
         context.log.error(f"Outline extraction failed: {e}")
 
-    # 5. Process Slides/Pages (Concept Extraction & Vector Indexing)
-    # Group elements by page number (if available) or just chunk?
-    # Unstructured usually provides "page_number" in metadata.
-    
+    # 5. Process Slides/Pages (Content Extraction)
     from collections import defaultdict
     pages = defaultdict(list)
     
-    # Logic to handle missing page numbers by chunking
     current_chunk_page = 1
     current_chunk_size = 0
-    CHUNK_LIMIT = 1500 # Approx 250-300 words per "slide" if no page breaks
+    CHUNK_LIMIT = 1500
     
+    # Organize text by page number
     for el in text_elements:
         metadata = el.get("metadata", {})
         text = el.get("text", "")
@@ -163,6 +193,7 @@ def build_knowledge_graph(
         ]
     })
 
+    # Process each page/slide
     for page_num, texts in pages.items():
         slide_text = "\n".join(texts)
         if not slide_text.strip():
@@ -171,13 +202,12 @@ def build_knowledge_graph(
         slide_id = f"{course_id}_p{page_num}"
         context.log.info(f"Processing Slide {page_num} (ID: {slide_id})")
         
-        # Derive asset type from filename
-        import os
+        # Derive asset type
         filename = manifest["filename"]
-        file_ext = os.path.splitext(filename)[1].upper().replace('.', '')  # e.g., "PPTX"
+        file_ext = os.path.splitext(filename)[1].upper().replace('.', '')
         asset_type = file_ext if file_ext in ["PDF", "PPTX", "DOCX", "PPT", "DOC"] else "Unknown"
         
-        # Create Slide Node
+        # Create Slide Node (Atomic Unit)
         neo4j_client.execute_query(
             """
             MATCH (c:Course {id: $course_id})
@@ -190,13 +220,11 @@ def build_knowledge_graph(
             {"course_id": course_id, "id": slide_id, "page_num": page_num, "text": slide_text[:500], "asset_type": asset_type}
         )
         
-        # Extract Concepts
+        # Extract Concepts (BAML)
         try:
             content = llm.extract_concepts(slide_text)
             
-            # Create Concept Nodes & Links with salience scores
             for concept in content.concepts:
-                # Get salience score, default to 0.5 if not provided
                 salience = getattr(concept, 'salience', 0.5)
                 
                 neo4j_client.execute_query(
@@ -231,35 +259,48 @@ def build_knowledge_graph(
         except Exception as e:
             context.log.error(f"Vector indexing failed for slide {slide_id}: {e}")
 
-    # 6. Aggregate Concepts to Section Summaries
-    context.log.info("Aggregating concepts to Section summaries...")
+    # --- PASS 2: LINK & ROLL-UP (The Fix) ---
+    context.log.info("Pass 2: Linking Structure to Content...")
+    
     try:
-        # Aggregate concepts from Slides to Sections using salience-weighted ranking
-        # Scoped to this course only
-        aggregation_query = """
-        MATCH (c:Course {id: $course_id})-[:HAS_SECTION]->(sec:Section)
-        OPTIONAL MATCH (sec)-[:HAS_SECTION*0..]->(child:Section)
-        OPTIONAL MATCH (child)-[:HAS_SLIDE]->(s:Slide)
-        OPTIONAL MATCH (s)-[t:TEACHES]->(con:Concept)
-        WITH sec, con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
-        WHERE concept_name IS NOT NULL
-        WITH sec, concept_name, total_salience
-        ORDER BY sec.id, total_salience DESC
-        WITH sec, collect({name: concept_name, salience: total_salience}) as concepts
-        SET sec.concept_summary = [x IN concepts[0..5] | x.name]
-        RETURN sec.id as section_id, sec.title as section_title, sec.concept_summary as summary
+        # 1. Link Slides to Sections based on Page Numbers
+        # This is the critical query that connects the "Outline" to the "Content"
+        link_query = """
+        MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(sec:Section)
+        MATCH (c)-[:HAS_SLIDE]->(s:Slide)
+        WHERE s.number >= sec.start_page 
+          AND (sec.end_page IS NULL OR s.number <= sec.end_page)
+        MERGE (sec)-[:HAS_SLIDE]->(s)
         """
-        
-        results = neo4j_client.execute_query(aggregation_query, {"course_id": course_id})
-        
-        for row in results:
-            context.log.info(f"Section '{row['section_title']}': {row['summary']}")
-        
-        context.log.info(f"Aggregated concepts for {len(results)} sections")
-        
+        neo4j_client.execute_query(link_query, {"course_id": course_id})
+        context.log.info("Linked Slides to Sections.")
+
+        # 2. Roll-up Concepts to Sections (COVERS Relationship)
+        # Allows API to query "What does Section 1.1 cover?" without reading slides
+        rollup_query = """
+        MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(sec:Section)
+        MATCH (sec)-[:HAS_SLIDE]->(s:Slide)-[t:TEACHES]->(con:Concept)
+        WITH sec, con, avg(t.salience) as avg_score, count(s) as frequency
+        MERGE (sec)-[r:COVERS]->(con)
+        SET r.score = avg_score, r.frequency = frequency
+        """
+        neo4j_client.execute_query(rollup_query, {"course_id": course_id})
+        context.log.info("Rolled up Concepts to Sections.")
+
+        # 3. Create Lightweight Summaries (Property for Fast API access)
+        summary_query = """
+        MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(sec:Section)
+        OPTIONAL MATCH (sec)-[r:COVERS]->(con:Concept)
+        WITH sec, con, r.score as score
+        ORDER BY score DESC
+        WITH sec, collect(con.name) as concepts
+        SET sec.concept_summary = concepts[0..10]
+        """
+        neo4j_client.execute_query(summary_query, {"course_id": course_id})
+        context.log.info("Created Concept Summaries.")
+
     except Exception as e:
-        context.log.error(f"Concept aggregation failed: {e}")
-        # Don't fail the entire job if aggregation fails
+        context.log.error(f"Pass 2 Linking failed: {e}")
 
     neo4j_client.close()
     return {"course_id": course_id, "status": "processed"}

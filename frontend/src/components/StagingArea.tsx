@@ -24,6 +24,8 @@ export const StagingArea: React.FC = () => {
     const [sharedConcepts, setSharedConcepts] = useState<Set<string>>(new Set());
     const [masterCourseId, setMasterCourseId] = useState<string | null>(null);
 
+    const [generating, setGenerating] = useState(false);
+
     // Fetch sections for all selected courses
     useEffect(() => {
         const fetchData = async () => {
@@ -124,6 +126,8 @@ export const StagingArea: React.FC = () => {
     }, [selectedSourceIds]);
 
     const handleGenerate = async () => {
+        if (generating) return;
+        setGenerating(true);
         try {
             // Build the payload
             const payload: any = {
@@ -144,6 +148,8 @@ export const StagingArea: React.FC = () => {
             setProjectId(result.project_id);
         } catch (error) {
             console.error('Failed to generate outline:', error);
+        } finally {
+            setGenerating(false);
         }
     };
 
@@ -173,10 +179,25 @@ export const StagingArea: React.FC = () => {
                     </div>
                     <button
                         onClick={handleGenerate}
-                        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                        disabled={generating}
+                        className={clsx(
+                            "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors",
+                            generating
+                                ? "bg-slate-300 text-slate-500 cursor-not-allowed"
+                                : "bg-blue-600 text-white hover:bg-blue-700"
+                        )}
                     >
-                        <Zap size={16} />
-                        Generate Outline
+                        {generating ? (
+                            <>
+                                <div className="animate-spin h-4 w-4 border-2 border-slate-500 border-t-transparent rounded-full" />
+                                Generating...
+                            </>
+                        ) : (
+                            <>
+                                <Zap size={16} />
+                                Generate Outline
+                            </>
+                        )}
                     </button>
                 </div>
 

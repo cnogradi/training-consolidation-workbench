@@ -108,40 +108,48 @@ def get_course_slides(course_id: str):
 def get_course_sections(course_id: str):
     """
     Returns ALL sections (including nested subsections) for a specific course.
-    For each section, we try to fetch concepts from slides that belong to that section.
-    If no section-specific concepts found, fall back to course-level concepts.
+    Uses pre-computed concept summaries or COVERS relationships.
     """
-    # First try to get section-specific concepts
-    sections_query = """
+    query = """
     MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
-    OPTIONAL MATCH (s)-[:CONTAINS]->(sl:Slide)-[t:TEACHES]->(con:Concept)
+    
+    // Try to get concepts from:
+    // 1. Pre-computed summary property
+    // 2. Direct COVERS relationship (rolled up)
+    // 3. Linked slides (HAS_SLIDE)
+    
+    OPTIONAL MATCH (s)-[:COVERS]->(con:Concept)
+    WITH s, collect(con.name) as covered_concepts
+    
+    OPTIONAL MATCH (s)-[:HAS_SLIDE]->(sl:Slide)-[t:TEACHES]->(slide_con:Concept)
     WHERE coalesce(t.salience, 0) >= 0.5
-    WITH s, con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
-    ORDER BY s.id, total_salience DESC
-    WITH s, collect(concept_name)[0..10] as section_concepts
+    WITH s, covered_concepts, collect(distinct slide_con.name) as slide_concepts
+    
     RETURN s.id as id, 
            s.title as title, 
            s.level as level,
-           section_concepts as concepts
+           // Priority: Property > COVERS > HAS_SLIDE > Empty
+           coalesce(s.concept_summary, covered_concepts[0..10], slide_concepts[0..10], []) as concepts
     ORDER BY s.id
     """
-    sections = neo4j_client.execute_query(sections_query, {"course_id": course_id})
+    sections = neo4j_client.execute_query(query, {"course_id": course_id})
     
-    # Get course-level concepts as fallback
+    # Get course-level concepts as a last resort fallback for the UI
+    # But only if a section truly has NO concepts
     course_concepts_query = """
     MATCH (c:Course {id: $course_id})-[:HAS_SLIDE]->(sl:Slide)-[t:TEACHES]->(con:Concept)
     WHERE coalesce(t.salience, 0) >= 0.5
-    WITH con.name as concept_name, sum(coalesce(t.salience, 0.5)) as total_salience
-    ORDER BY total_salience DESC
-    RETURN collect(concept_name)[0..10] as course_concepts
+    RETURN collect(distinct con.name)[0..10] as course_concepts
     """
     course_result = neo4j_client.execute_query(course_concepts_query, {"course_id": course_id})
-    course_concepts = course_result[0]["course_concepts"] if course_result and course_result[0]["course_concepts"] else []
+    course_concepts = course_result[0]["course_concepts"] if course_result else []
     
-    # Format results - use section concepts if available, otherwise course concepts
     formatted_results = []
     for row in sections:
-        concepts = row["concepts"] if row["concepts"] else course_concepts
+        concepts = row["concepts"]
+        if not concepts:
+            concepts = course_concepts
+            
         formatted_results.append({
             "id": row["id"],
             "title": row["title"],
@@ -554,7 +562,7 @@ def get_draft_structure(project_id: str):
     OPTIONAL MATCH (n)-[:DERIVED_FROM]->(s:Slide)
     OPTIONAL MATCH (n)-[:SUGGESTED_SOURCE]->(ss:Slide)
     RETURN n.id as id, n.title as title, n.status as status, n.content_markdown as content, 
-           n.rationale as rationale, n.order as order,
+           n.rationale as rationale, n.order as order, coalesce(n.is_unassigned, false) as is_unassigned,
            parent.id as parent_id, 
            collect(distinct s.id) as source_refs,
            collect(distinct ss.id) as suggested_source_ids
@@ -596,7 +604,8 @@ def get_draft_structure(project_id: str):
             is_suggestion=is_suggestion,
             suggested_source_ids=row["suggested_source_ids"],
             rationale=row["rationale"],
-            order=row.get("order", 0)
+            order=row.get("order", 0),
+            is_unassigned=row.get("is_unassigned") or False
         ))
     return nodes
 
@@ -697,7 +706,11 @@ def generate_project_skeleton(request: SkeletonRequest):
     service = GeneratorService()
     try:
         # Generate skeleton
-        result = service.generate_skeleton(request.selected_source_ids, title=request.title)
+        result = service.generate_skeleton(
+            request.selected_source_ids, 
+            title=request.title,
+            master_course_id=request.master_course_id
+        )
         
         # Fetch full project tree
         project_id = result['project_id']
@@ -715,6 +728,7 @@ def generate_project_skeleton(request: SkeletonRequest):
                    status: t.status,
                    order: t.order,
                    is_suggestion: true,
+                   is_unassigned: coalesce(t.is_unassigned, false),
                    suggested_source_ids: suggested_ids,
                    source_refs: [],
                    parent_id: p.id,

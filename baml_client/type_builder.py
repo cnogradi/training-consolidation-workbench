@@ -198,7 +198,7 @@ class SectionAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("Section")
-        self._properties: typing.Set[str] = set([  "title",  "level",  "page_number",  "subsections",  ])
+        self._properties: typing.Set[str] = set([  "title",  "level",  "start_page",  "end_page",  "subsections",  ])
         self._props = SectionProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -235,8 +235,12 @@ class SectionProperties:
         return type_builder.ClassPropertyViewer(self.__bldr.property("level"))
     
     @property
-    def page_number(self) -> type_builder.ClassPropertyViewer:
-        return type_builder.ClassPropertyViewer(self.__bldr.property("page_number"))
+    def start_page(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("start_page"))
+    
+    @property
+    def end_page(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("end_page"))
     
     @property
     def subsections(self) -> type_builder.ClassPropertyViewer:

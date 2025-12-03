@@ -41,7 +41,8 @@ class Outline(BaseModel):
 class Section(BaseModel):
     title: typing.Optional[str] = None
     level: typing.Optional[int] = None
-    page_number: typing.Optional[int] = None
+    start_page: typing.Optional[int] = None
+    end_page: typing.Optional[int] = None
     subsections: typing.List["Section"]
 
 class SlideContent(BaseModel):

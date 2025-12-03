@@ -3,7 +3,7 @@ Service for generating consolidated curricula from source materials.
 """
 import uuid
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from src.storage.neo4j import Neo4jClient
 from src.storage.weaviate import WeaviateClient
@@ -31,13 +31,14 @@ class GeneratorService:
         self.weaviate_client = WeaviateClient()
         self.harmonizer = OutlineHarmonizer()
     
-    def generate_skeleton(self, selected_source_ids: List[str], title: str = "New Curriculum") -> Dict[str, Any]:
+    def generate_skeleton(self, selected_source_ids: List[str], title: str = "New Curriculum", master_course_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate a curriculum skeleton from selected source sections/courses.
         
         Args:
             selected_source_ids: List of Section IDs or Course IDs
             title: Title for the new curriculum project
+            master_course_id: If provided, use this course's outline as the master structure
             
         Returns:
             Dictionary with project_id and generated structure
@@ -50,12 +51,18 @@ class GeneratorService:
         
         print(f"DEBUG: Found {len(source_course_ids)} source course IDs: {source_course_ids}")
         
-        # Step 2: Call DSPy to generate consolidated plan
-        print("DEBUG: Calling harmonizer...")
-        consolidated_sections = self.harmonizer(source_outlines)
-        print(f"DEBUG: Harmonizer returned {len(consolidated_sections)} sections")
-        for s in consolidated_sections:
-            print(f"DEBUG: Section '{s['title']}' has concepts: {s.get('key_concepts')}")
+        # Step 2: Generate consolidated plan
+        if master_course_id:
+            # Use the master course's outline as the structure
+            print(f"DEBUG: Using master outline from course: {master_course_id}")
+            consolidated_sections = self._use_master_outline(master_course_id)
+        else:
+            # Call DSPy to generate consolidated plan
+            print("DEBUG: Calling harmonizer...")
+            consolidated_sections = self.harmonizer(source_outlines)
+            print(f"DEBUG: Harmonizer returned {len(consolidated_sections)} sections")
+            for s in consolidated_sections:
+                print(f"DEBUG: Section '{s['title']}' has concepts: {s.get('key_concepts')}")
         
         # Step 3: For each target section, find matching slides (FILTERED by source courses)
         enriched_sections = []
@@ -124,25 +131,62 @@ class GeneratorService:
         results = self.neo4j_client.execute_query(query, {"course_ids": course_ids})
         return results
     
+    def _use_master_outline(self, master_course_id: str) -> List[Dict]:
+        """
+        Use a master course's outline as the structure for the new curriculum.
+        Returns a list of sections with titles, rationale, and key_concepts.
+        """
+        query = """
+        MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
+        OPTIONAL MATCH (s)-[:COVERS]->(con:Concept)
+        WITH s, collect(distinct con.name) as concepts
+        RETURN s.id as id,
+               s.title as title,
+               s.level as level,
+               coalesce(s.concept_summary, concepts, []) as concepts
+        ORDER BY s.id
+        """
+        results = self.neo4j_client.execute_query(query, {"course_id": master_course_id})
+        
+        sections = []
+        for row in results:
+            sections.append({
+                'title': row['title'],
+                'rationale': f"Section from master outline: {row['title']}",
+                'key_concepts': row.get('concepts', [])[:10]  # Limit to 10 concepts
+            })
+        
+        return sections
+    
     def _fetch_source_outlines(self, source_ids: List[str]) -> tuple:
         """
         Fetch section titles and concept summaries from Neo4j.
+        Handles both Course and Section IDs.
         Returns (outlines, course_ids).
         """
-        query = """
-        MATCH (course:Course)
-        WHERE course.id IN $source_ids
+        # We need to handle two cases:
+        # 1. Input is a Course -> Get all its concepts
+        # 2. Input is a Section -> Get its specific concepts via HAS_SLIDE
         
-        // Get concepts from course slides
-        OPTIONAL MATCH (course)-[:HAS_SLIDE]->(slide:Slide)-[t:TEACHES]->(c:Concept)
+        query = """
+        UNWIND $source_ids as sid
+        MATCH (n) WHERE n.id = sid
+        
+        // Determine type and parent info
+        OPTIONAL MATCH (n:Section)<-[:HAS_SECTION*]-(c:Course)
+        WITH n, coalesce(c.business_unit, n.business_unit, 'Unknown') as bu, coalesce(c.id, n.id) as course_id
+        
+        // Get concepts from linked slides (HAS_SLIDE)
+        // This works for both Course and Section if they have HAS_SLIDE relationships
+        OPTIONAL MATCH (n)-[:HAS_SLIDE]->(slide:Slide)-[t:TEACHES]->(con:Concept)
         WHERE coalesce(t.salience, 0) >= 0.5
         
-        WITH course, collect(DISTINCT c.name) as concepts
+        WITH n, bu, course_id, collect(DISTINCT con.name) as concepts
         
-        RETURN course.title as section_title,
-               coalesce(course.business_unit, 'Unknown') as bu,
-               course.id as course_id,
-               concepts[0..10] as concepts
+        RETURN n.title as section_title,
+               bu,
+               course_id,
+               concepts[0..15] as concepts
         """
         results = self.neo4j_client.execute_query(query, {"source_ids": source_ids})
         
@@ -155,7 +199,7 @@ class GeneratorService:
             for r in results if r['section_title']
         ]
         
-        # Collect unique course IDs
+        # Collect unique course IDs for slide filtering
         course_ids = list(set(r['course_id'] for r in results if r.get('course_id')))
         
         return outlines, course_ids
@@ -248,7 +292,8 @@ class GeneratorService:
                     rationale: $rationale,
                     key_concepts: $key_concepts,
                     status: 'suggestion',
-                    order: $order
+                    order: $order,
+                    is_unassigned: $is_unassigned
                 })
                 CREATE (p)-[:HAS_CHILD]->(t)
                 """,
@@ -258,7 +303,8 @@ class GeneratorService:
                     "title": section['title'],
                     "rationale": section['rationale'],
                     "key_concepts": section.get('key_concepts', []),
-                    "order": i
+                    "order": i,
+                    "is_unassigned": section.get('is_unassigned', False)
                 }
             )
             

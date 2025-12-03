@@ -71,49 +71,62 @@ def _check_libreoffice_installed():
     
     return None
 
+def convert_to_pdf(file_path: str, output_dir: str) -> str:
+    """
+    Convert a document (PPTX, DOCX, etc.) to PDF using LibreOffice.
+    Returns the path to the generated PDF.
+    """
+    soffice_cmd = _check_libreoffice_installed()
+    
+    if not soffice_cmd:
+        raise RuntimeError("LibreOffice 'soffice' command not found. Cannot convert document to PDF.")
+
+    # Create a temporary directory for the user profile to avoid locking issues
+    user_profile_dir = os.path.join(output_dir, "soffice_profile")
+    os.makedirs(user_profile_dir, exist_ok=True)
+    
+    # Format path for LibreOffice URL (file:///)
+    user_profile_url = f"file:///{user_profile_dir.replace(os.sep, '/')}"
+
+    cmd = [
+        soffice_cmd,
+        f"-env:UserInstallation={user_profile_url}",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", output_dir,
+        file_path
+    ]
+    
+    print(f"Running LibreOffice conversion: {' '.join(cmd)}")
+    
+    # Run LibreOffice conversion and capture output
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    # Check for errors
+    if result.returncode != 0:
+        print(f"LibreOffice conversion failed with exit code {result.returncode}")
+        print(f"STDOUT: {result.stdout}")
+        print(f"STDERR: {result.stderr}")
+        raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
+    
+    # Expect filename.pdf in output_dir
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
+    
+    if not os.path.exists(pdf_path):
+        raise RuntimeError(f"PDF conversion failed. Expected output at {pdf_path}")
+        
+    return pdf_path
+
 def render_pptx_slides(file_path: str) -> List[Image.Image]:
     """
     Render each slide of a PPTX to a PIL Image by converting to PDF first.
     Requires LibreOffice to be installed.
     """
-    soffice_cmd = _check_libreoffice_installed()
-    
-    if not soffice_cmd:
-        print(f"Warning: LibreOffice 'soffice' command not found. Cannot render PPTX slides for {file_path}.")
-        print("Please install LibreOffice and add it to your PATH.")
-        return []
-
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Convert PPTX to PDF
-            cmd = [
-                soffice_cmd,
-                "--headless",
-                "--convert-to", "pdf",
-                "--outdir", temp_dir,
-                file_path
-            ]
-            
-            print(f"Running LibreOffice conversion: {' '.join(cmd)}")
-            
-            # Run LibreOffice conversion and capture output
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            # Check for errors
-            if result.returncode != 0:
-                print(f"LibreOffice conversion failed with exit code {result.returncode}")
-                print(f"STDOUT: {result.stdout}")
-                print(f"STDERR: {result.stderr}")
-                return []
-            
-            # Expect filename.pdf in temp_dir
-            base_name = os.path.splitext(os.path.basename(file_path))[0]
-            pdf_path = os.path.join(temp_dir, f"{base_name}.pdf")
-            
-            if not os.path.exists(pdf_path):
-                print(f"Error: PDF conversion failed. Expected output at {pdf_path}")
-                print(f"Files in temp dir: {os.listdir(temp_dir)}")
-                return []
+            # Convert to PDF
+            pdf_path = convert_to_pdf(file_path, temp_dir)
                 
             # Now render the PDF
             return render_pdf_pages(pdf_path)
