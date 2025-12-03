@@ -132,10 +132,28 @@ class ContentSynthesizer(dspy.Module):
                 "callouts": result_data.get("callouts", [])
             }
         
+        
         # 6. Post-Processing / Formatting for UI
+        # Clean up common LLM artifacts
+        markdown = result.markdown_content
+        
+        # Remove common artifact phrases
+        artifacts_to_remove = [
+            r'\*?\(End of slide content\)\*?',
+            r'\*?End of slide\*?',
+            r'\*?---END---\*?',
+        ]
+        
+        import re
+        for pattern in artifacts_to_remove:
+            markdown = re.sub(pattern, '', markdown, flags=re.IGNORECASE)
+        
+        # Clean up extra whitespace
+        markdown = markdown.strip()
+        
         # We return a dict that the Frontend can easily render
         return {
-            "markdown": result.markdown_content,
+            "markdown": markdown,
             "assets": [
                 # Find the full asset object for the IDs the LLM selected
                 next((a for a in all_assets if (a.get('asset_id') if isinstance(a, dict) else a.asset_id) == sel_id), None)

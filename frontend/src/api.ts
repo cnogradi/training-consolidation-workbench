@@ -122,6 +122,12 @@ export const api = {
         const res = await axios.get<Record<string, { score: number, type: 'course' | 'slide' }>>(`${API_URL}/source/heatmap/${term}`);
         return res.data;
     },
+    updateNodeContent: async (nodeId: string, markdown: string) => {
+        const res = await axios.put(`${API_URL}/draft/node/content`, { content_markdown: markdown }, {
+            params: { node_id: nodeId }
+        });
+        return res.data;
+    },
 };
 
 export interface SearchRequest {

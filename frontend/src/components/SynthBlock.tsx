@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { api } from '../api';
 import type { TargetDraftNode } from '../api';
 import { useAppStore } from '../store';
+import { MarkdownEditor } from './MarkdownEditor';
 
 // Reuse the SortableThumbnail from previous implementation (will need to export/move it or redefine)
 // For now, I'll redefine a simpler version or import if I extract it. 
@@ -313,23 +314,40 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                     Synthesis
                                 </div>
 
-                                {/* Output Preview (if exists) */}
+                                {/* Output Preview/Editor (if exists) */}
                                 {node.content_markdown ? (
-                                    <div
-                                        className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer hover:ring-1 hover:ring-brand-teal/30 transition-all"
-                                        onClick={() => {
-                                            // Set active Node ID (which we'll use in Inspector)
-                                            // We need to ensure we don't conflict with activeSlideId
-                                            // The Inspector currently checks activeSlideId.
-                                            // We might need to clear activeSlideId when setting activeNodeId or handle priority.
-                                            useAppStore.getState().setActiveSlideId(null);
-                                            useAppStore.getState().setActiveNodeId(node.id);
-                                        }}
-                                    >
-                                        <div className="whitespace-pre-wrap text-slate-700 text-sm pointer-events-none">{node.content_markdown}</div>
-                                        <div className="text-[10px] text-brand-teal mt-2 flex items-center gap-1 font-medium">
-                                            <Sparkles size={10} />
-                                            Click to inspect generated content
+                                    <div className="mb-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                Editable Content
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    // Set active Node ID to show in Inspector
+                                                    useAppStore.getState().setActiveSlideId(null);
+                                                    useAppStore.getState().setActiveNodeId(node.id);
+                                                }}
+                                                className="text-xs text-brand-teal hover:text-brand-teal-dark flex items-center gap-1 font-medium transition-colors"
+                                            >
+                                                <Sparkles size={12} />
+                                                View Preview →
+                                            </button>
+                                        </div>
+                                        <MarkdownEditor
+                                            content={node.content_markdown}
+                                            onSave={async (markdown) => {
+                                                try {
+                                                    await api.updateNodeContent(node.id, markdown);
+                                                    // Optionally refresh to show updated content
+                                                    // onRefresh();
+                                                } catch (e) {
+                                                    console.error('Failed to save content:', e);
+                                                }
+                                            }}
+                                        />
+                                        <div className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+                                            <Sparkles size={10} className="text-brand-teal" />
+                                            Auto-saved as you type
                                         </div>
                                     </div>
                                 ) : null}

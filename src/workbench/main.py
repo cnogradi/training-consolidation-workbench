@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
 import os
@@ -538,6 +538,26 @@ def map_slides_to_node(node_id: str, slide_ids: List[str]):
     """
     neo4j_client.execute_query(query, {"node_id": node_id, "slide_ids": slide_ids})
     return {"status": "success", "mapped_slides": len(slide_ids)}
+
+@app.put("/draft/node/content")
+def update_node_content(node_id: str, request: dict = Body(...)):
+    """
+    Updates the content_markdown property of a TargetNode.
+    Used for auto-saving edited synthesis content from the TipTap editor.
+    """
+    content_markdown = request.get("content_markdown", "")
+    
+    query = """
+    MATCH (t:TargetNode {id: $node_id})
+    SET t.content_markdown = $content
+    RETURN t.id as id
+    """
+    result = neo4j_client.execute_query(query, {"node_id": node_id, "content": content_markdown})
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Node not found")
+    
+    return {"status": "success", "node_id": node_id}
 
 @app.get("/draft/structure/{project_id}", response_model=List[TargetDraftNode])
 def get_draft_structure(project_id: str):
