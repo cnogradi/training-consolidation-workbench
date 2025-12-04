@@ -85,6 +85,11 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     const [synthesizing, setSynthesizing] = useState(false);
     const [expanded, setExpanded] = useState(true);
 
+    // Ref for the title input to enable auto-focus
+    const titleInputRef = useRef<HTMLInputElement>(null);
+    const newlyAddedNodeId = useAppStore(state => state.newlyAddedNodeId);
+    const setNewlyAddedNodeId = useAppStore(state => state.setNewlyAddedNodeId);
+
     // Determine effective items (manual sources OR suggested sources)
     const effectiveItems = node.is_suggestion
         ? (node.suggested_source_ids || [])
@@ -92,6 +97,15 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
 
     const [items, setItems] = useState(effectiveItems);
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+
+    // Auto-focus on newly added nodes
+    useEffect(() => {
+        if (newlyAddedNodeId === node.id && titleInputRef.current) {
+            titleInputRef.current.focus();
+            titleInputRef.current.select();
+            setNewlyAddedNodeId(null); // Clear after focusing
+        }
+    }, [newlyAddedNodeId, node.id, setNewlyAddedNodeId]);
 
     // Sync local items with props
     useEffect(() => {
@@ -191,6 +205,7 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                     {/* Title is editable for technical sections only */}
                     {node.section_type === 'technical' ? (
                         <input
+                            ref={titleInputRef}
                             type="text"
                             defaultValue={node.title}
                             className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none focus:ring-1 focus:ring-brand-teal/30 focus:bg-white rounded px-1 -ml-1 w-full"
