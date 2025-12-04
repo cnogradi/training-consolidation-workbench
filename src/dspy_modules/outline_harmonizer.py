@@ -185,17 +185,34 @@ class OutlineHarmonizer(dspy.Module):
                 is_list = module_config.get('is_list', False)
                 
                 if key in plan_data:
-                    if is_list and isinstance(plan_data[key], list):
-                        for item in plan_data[key]:
-                            item['type'] = module_type
-                            final_tree.append(item)
-                    elif isinstance(plan_data[key], dict):
-                        # Single module
-                        section_dict = plan_data[key]
-                        section_dict['type'] = module_type
-                        final_tree.append(section_dict)
+                    data = plan_data[key]
+                    
+                    # Handle Type Mismatches (LLM returning list for single item or vice versa)
+                    if is_list:
+                        # Expecting list, but got dict -> wrap in list
+                        if isinstance(data, dict):
+                            data = [data]
+                        
+                        if isinstance(data, list):
+                            for item in data:
+                                if isinstance(item, dict):
+                                    item['type'] = module_type
+                                    final_tree.append(item)
                     else:
-                        print(f"[WARN] Unexpected type for key '{key}': {type(plan_data[key])}")
+                        # Expecting single dict
+                        if isinstance(data, list):
+                            # Got list -> take first item if available
+                            if len(data) > 0 and isinstance(data[0], dict):
+                                data = data[0]
+                            else:
+                                print(f"[WARN] Key '{key}' is a list but empty or invalid")
+                                continue
+                        
+                        if isinstance(data, dict):
+                            data['type'] = module_type
+                            final_tree.append(data)
+                        else:
+                            print(f"[WARN] Unexpected type for key '{key}': {type(data)}")
                 else:
                     print(f"[WARN] Missing expected key '{key}' in LLM response")
             
