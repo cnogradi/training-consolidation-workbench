@@ -8,12 +8,14 @@ interface AppState {
     structure: TargetDraftNode[];
     activeNodeId: string | null; // The node currently being edited/viewed in Right Pane
     activeSlideId: string | null; // The source slide currently being inspected
+    newlyAddedNodeId: string | null; // Track the most recently added node for auto-focus
 
     // Actions
     setDiscipline: (d: string) => void;
     setProjectId: (id: string | null) => void;
     setActiveNodeId: (id: string | null) => void;
     setActiveSlideId: (id: string | null) => void;
+    setNewlyAddedNodeId: (id: string | null) => void;
     fetchStructure: () => Promise<void>;
     createProjectIfNeeded: () => Promise<void>;
     addNode: (parentId: string, title: string) => Promise<void>;
@@ -36,6 +38,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     structure: [],
     activeNodeId: null,
     activeSlideId: null,
+    newlyAddedNodeId: null,
 
     // Heatmap State
     heatmapMode: false,
@@ -49,6 +52,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     setProjectId: (id) => set({ projectId: id }),
     setActiveNodeId: (id) => set({ activeNodeId: id }),
     setActiveSlideId: (id) => set({ activeSlideId: id }),
+    setNewlyAddedNodeId: (id) => set({ newlyAddedNodeId: id }),
 
     setHeatmapMode: (mode) => set({ heatmapMode: mode }),
     setSearchQuery: (query) => set({ searchQuery: query }),
@@ -84,7 +88,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     addNode: async (parentId, title) => {
         try {
-            await api.addDraftNode(parentId, title);
+            const newNode = await api.addDraftNode(parentId, title);
+            set({ newlyAddedNodeId: newNode.id });
             get().fetchStructure();
         } catch (e) {
             console.error("Failed to add node", e);

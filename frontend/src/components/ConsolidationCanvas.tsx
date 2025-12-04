@@ -83,8 +83,9 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
                     <h2 className="font-bold text-slate-800 text-lg">Consolidated Outline</h2>
                 </div>
                 <button
-                    onClick={() => projectId && addNode(projectId, "New Topic")}
+                    onClick={() => projectId && addNode(projectId, "New Module")}
                     className="text-brand-teal hover:bg-brand-teal/10 p-2 rounded-full transition-colors"
+                    title="Add new section"
                 >
                     <Plus size={20} />
                 </button>

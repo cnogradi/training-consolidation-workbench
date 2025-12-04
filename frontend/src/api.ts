@@ -116,6 +116,12 @@ export const api = {
         });
         return res.data;
     },
+    rejectSuggestedNode: async (nodeId: string) => {
+        const res = await axios.delete(`${API_URL}/draft/node/reject`, {
+            params: { node_id: nodeId }
+        });
+        return res.data;
+    },
     triggerRender: async (projectId: string) => {
         const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId });
         return res.data;
@@ -126,6 +132,12 @@ export const api = {
     },
     updateNodeContent: async (nodeId: string, markdown: string) => {
         const res = await axios.put(`${API_URL}/draft/node/content`, { content_markdown: markdown }, {
+            params: { node_id: nodeId }
+        });
+        return res.data;
+    },
+    updateNodeTitle: async (nodeId: string, title: string) => {
+        const res = await axios.put(`${API_URL}/draft/node/title`, { title }, {
             params: { node_id: nodeId }
         });
         return res.data;

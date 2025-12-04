@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Sparkles, GripVertical, X, MessageSquare, ChevronRight, ChevronDown } from 'lucide-react';
@@ -188,12 +188,33 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                     {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
                 <div className="flex-1 mr-4">
-                    <input
-                        type="text"
-                        defaultValue={node.title}
-                        className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none w-full"
-                        readOnly={isSuggestion || isUnassigned}
-                    />
+                    {/* Title is editable for technical sections only */}
+                    {node.section_type === 'technical' ? (
+                        <input
+                            type="text"
+                            defaultValue={node.title}
+                            className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none focus:ring-1 focus:ring-brand-teal/30 focus:bg-white rounded px-1 -ml-1 w-full"
+                            onBlur={async (e) => {
+                                const newTitle = e.target.value.trim();
+                                if (newTitle && newTitle !== node.title) {
+                                    try {
+                                        await api.updateNodeTitle(node.id, newTitle);
+                                        onRefresh();
+                                    } catch (err) {
+                                        console.error("Failed to update title", err);
+                                        e.target.value = node.title; // Revert
+                                    }
+                                }
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.currentTarget.blur();
+                                }
+                            }}
+                        />
+                    ) : (
+                        <span className="font-bold text-slate-800 text-sm">{node.title}</span>
+                    )}
                     {node.rationale && !isPlaceholder && (
                         <div className="text-[10px] text-slate-500 mt-0.5 italic truncate">
                             {node.rationale}
@@ -292,10 +313,18 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                 </p>
                                 <div className="flex gap-3">
                                     <button
-                                        onClick={() => { /* TODO: Reject logic */ }}
+                                        onClick={async () => {
+                                            try {
+                                                await api.rejectSuggestedNode(node.id);
+                                                onRefresh();
+                                            } catch (e) {
+                                                console.error("Failed to reject suggestion", e);
+                                                alert("Failed to reject suggestion");
+                                            }
+                                        }}
                                         className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                     >
-                                        Reject
+                                        {node.section_type === 'technical' ? 'Reject' : 'Clear Suggestions'}
                                     </button>
                                     <button
                                         onClick={handleAccept}

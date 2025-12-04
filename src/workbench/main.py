@@ -496,15 +496,22 @@ def create_draft_project(title: str):
 def add_draft_node(parent_id: str, title: str):
     """
     Adds a new Section/Module to the new outline.
+    Defaults to 'technical' section type.
     """
     import uuid
     node_id = str(uuid.uuid4())
     
     query = """
     MATCH (parent {id: $parent_id})
-    CREATE (child:TargetNode {id: $id, title: $title, status: "empty", content_markdown: ""})
+    CREATE (child:TargetNode {
+        id: $id, 
+        title: $title, 
+        status: "draft", 
+        content_markdown: "",
+        section_type: "technical"
+    })
     MERGE (parent)-[:HAS_CHILD]->(child)
-    RETURN child.id as id, child.title as title, child.status as status
+    RETURN child.id as id, child.title as title, child.status as status, child.section_type as section_type
     """
     # Note: parent could be Project or TargetNode
     results = neo4j_client.execute_query(query, {"parent_id": parent_id, "id": node_id, "title": title})
@@ -518,7 +525,8 @@ def add_draft_node(parent_id: str, title: str):
         id=row["id"],
         title=row["title"],
         parent_id=parent_id,
-        status=row["status"]
+        status=row["status"],
+        section_type=row.get("section_type", "technical")
     )
 
 @app.put("/draft/node/map")
@@ -558,6 +566,41 @@ def update_node_content(node_id: str, request: dict = Body(...)):
         raise HTTPException(status_code=404, detail="Node not found")
     
     return {"status": "success", "node_id": node_id}
+
+@app.put("/draft/node/title")
+def update_node_title(node_id: str, request: dict = Body(...)):
+    """
+    Updates the title of a TargetNode.
+    Only allowed for non-mandatory sections (technical).
+    """
+    title = request.get("title", "")
+    
+    if not title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    
+    # Check if this is a mandatory section
+    check_query = """
+    MATCH (t:TargetNode {id: $node_id})
+    RETURN t.section_type as section_type
+    """
+    check_result = neo4j_client.execute_query(check_query, {"node_id": node_id})
+    
+    if not check_result:
+        raise HTTPException(status_code=404, detail="Node not found")
+    
+    section_type = check_result[0].get("section_type", "technical")
+    
+    if section_type in ['introduction', 'mandatory_safety', 'mandatory_assessment']:
+        raise HTTPException(status_code=403, detail="Cannot rename mandatory sections")
+    
+    query = """
+    MATCH (t:TargetNode {id: $node_id})
+    SET t.title = $title
+    RETURN t.id as id
+    """
+    result = neo4j_client.execute_query(query, {"node_id": node_id, "title": title})
+    
+    return {"status": "success", "node_id": node_id, "title": title}
 
 @app.get("/draft/structure/{project_id}", response_model=List[TargetDraftNode])
 def get_draft_structure(project_id: str):
@@ -815,6 +858,72 @@ def accept_suggested_node(node_id: str):
         "new_status": results[0]["status"],
         "sources_linked": results[0]["sources_accepted"]
     }
+
+@app.delete("/draft/node/reject")
+def reject_suggested_node(node_id: str):
+    """
+    Reject an AI-suggested node.
+    
+    For mandatory sections (introduction, mandatory_safety, mandatory_assessment):
+    - Clear suggested sources but keep the node
+    - Convert to 'draft' status with empty sources
+    
+    For technical sections:
+    - Delete the node entirely
+    """
+    # First check the section type
+    check_query = """
+    MATCH (t:TargetNode {id: $node_id})
+    WHERE t.status = 'suggestion'
+    RETURN t.section_type as section_type
+    """
+    
+    check_results = neo4j_client.execute_query(check_query, {"node_id": node_id})
+    
+    if not check_results:
+        raise HTTPException(status_code=404, detail="Node not found or already processed")
+    
+    section_type = check_results[0].get("section_type", "technical")
+    
+    # Mandatory sections: keep node, clear suggestions
+    if section_type in ['introduction', 'mandatory_safety', 'mandatory_assessment']:
+        query = """
+        MATCH (t:TargetNode {id: $node_id})
+        WHERE t.status = 'suggestion'
+        
+        // Delete suggested sources but keep the node
+        OPTIONAL MATCH (t)-[r:SUGGESTED_SOURCE]->()
+        DELETE r
+        
+        // Update status to draft
+        SET t.status = 'draft'
+        
+        RETURN t.id as id, t.status as status
+        """
+        results = neo4j_client.execute_query(query, {"node_id": node_id})
+        
+        return {
+            "status": "cleared",
+            "node_id": node_id,
+            "action": "suggestions_cleared"
+        }
+    else:
+        # Technical sections: delete entirely
+        query = """
+        MATCH (t:TargetNode {id: $node_id})
+        WHERE t.status = 'suggestion'
+        
+        DETACH DELETE t
+        
+        RETURN $node_id as deleted_id
+        """
+        neo4j_client.execute_query(query, {"node_id": node_id})
+        
+        return {
+            "status": "rejected",
+            "node_id": node_id,
+            "action": "deleted"
+        }
 
 @app.post("/render/trigger")
 def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
