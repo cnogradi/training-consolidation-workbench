@@ -5,6 +5,7 @@ import type { CourseNode, SourceSlide } from '../api';
 import { useDraggable } from '@dnd-kit/core';
 import { useAppStore } from '../store';
 import { useSelectionStore } from '../stores/selectionStore';
+import { SidebarActionPanel } from './SidebarActionPanel';
 import clsx from 'clsx';
 
 interface SourceBrowserProps {
@@ -48,7 +49,6 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
             // 1. Always fetch tree data first (either search results or default tree)
             // Check if any filter is active or query exists
             const hasFilters = Object.values(filters).some(v => v !== '') || searchQuery.length > 0;
-            let currentTree = tree;
 
             if (hasFilters) {
                 try {
@@ -62,7 +62,6 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
                         }
                     });
                     setTree(results);
-                    currentTree = results;
                 } catch (e) {
                     console.error("Search failed", e);
                 }
@@ -73,7 +72,6 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
                 if (tree.length === 0 || (!searchQuery && !heatmapMode && !hasFilters)) {
                     const results = await api.getSourceTree(discipline);
                     setTree(results);
-                    currentTree = results;
                 }
             }
 
@@ -102,7 +100,7 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
     };
 
     return (
-        <div className="flex flex-col h-full bg-white">
+        <div className="flex flex-col h-full bg-white relative">
             {/* Header & Search */}
             <div className="p-4 border-b border-slate-100 bg-white z-10 space-y-3">
                 <div className="flex items-center justify-between text-slate-800">
@@ -199,7 +197,7 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
             </div>
 
             {/* Tree View */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar pb-24">
                 {tree.length === 0 && (
                     <div className="text-center text-slate-400 text-xs mt-10 italic">
                         No content found.
@@ -210,6 +208,9 @@ export const SourceBrowser: React.FC<SourceBrowserProps> = ({ discipline }) => {
                     <BusinessUnitNode key={bu.name} node={bu} heatmapData={heatmapData} heatmapMode={heatmapMode} searchQuery={searchQuery} />
                 ))}
             </div>
+
+            {/* Selection Action Panel - Moved inside SourceBrowser */}
+            <SidebarActionPanel />
         </div>
     );
 };
@@ -223,10 +224,6 @@ const BusinessUnitNode: React.FC<{ node: CourseNode, heatmapData?: Record<string
     // Just pass data down. 
 
     // Optional: Highlight BU if it contains any heat?
-    const hasHeat = useMemo(() => {
-        if (!heatmapMode || !heatmapData) return false;
-        return node.children?.some(child => heatmapData[child.id]);
-    }, [node, heatmapData, heatmapMode]);
 
     // Get all descendant IDs (courses in this BU)
     const getAllDescendantIds = (n: CourseNode): string[] => {
@@ -497,7 +494,7 @@ const SlideRow: React.FC<{ slide: SourceSlide, isHighlighted: boolean, heatmapDa
                                 // Heatmap Logic: Highlight concept tag if it likely matches the search
                                 // Simple heuristic: Check if search query is part of concept name
                                 (heatmapMode && intensity > 0 && searchQuery && c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                                    ? (c.salience > 0.7
+                                    ? ((c.salience || 0) > 0.7
                                         ? "bg-red-100 text-red-700 border-red-300 font-medium ring-1 ring-red-200"
                                         : "bg-orange-100 text-orange-700 border-orange-300 font-medium ring-1 ring-orange-200")
                                     : "bg-slate-100 text-slate-500 border-slate-200"

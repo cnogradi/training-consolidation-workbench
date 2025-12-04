@@ -3,15 +3,15 @@ import type { DragEndEvent } from '@dnd-kit/core';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { TopBar } from './components/TopBar';
 import { SourceBrowser } from './components/SourceBrowser';
-import { SidebarActionPanel } from './components/SidebarActionPanel';
 import { ConsolidationCanvas } from './components/ConsolidationCanvas';
 import { SlideInspector } from './components/SlideInspector';
+import { StagingArea } from './components/StagingArea';
 import { useAppStore } from './store';
 import type { SourceSlide } from './api';
 import { useEffect, useState } from 'react';
 
 function App() {
-  const { discipline, setDiscipline, projectId, setProjectId, createProjectIfNeeded, mapSlideToNode, structure } = useAppStore();
+  const { discipline, setDiscipline, projectId, setProjectId, createProjectIfNeeded, mapSlideToNode, stagingMode } = useAppStore();
   const [activeDragSlide, setActiveDragSlide] = useState<SourceSlide | null>(null);
 
   // Ensure a project exists for the current discipline
@@ -102,18 +102,21 @@ function App() {
             {/* Left Pane: Source Browser (20%) */}
             <Panel defaultSize={20} minSize={15} className="bg-white border-r border-slate-200 relative">
               <SourceBrowser discipline={discipline} />
-              <SidebarActionPanel />
             </Panel>
 
             <PanelResizeHandle className="w-1 bg-slate-200 hover:bg-brand-teal transition-colors cursor-col-resize" />
 
-            {/* Center Pane: Consolidation Canvas (50%) */}
+            {/* Center Pane: Staging Area or Consolidation Canvas (50%) */}
             <Panel defaultSize={50} minSize={30} className="bg-slate-50">
-              <ConsolidationCanvas
-                projectId={projectId}
-                setProjectId={setProjectId}
-                discipline={discipline}
-              />
+              {stagingMode ? (
+                <StagingArea />
+              ) : (
+                <ConsolidationCanvas
+                  projectId={projectId}
+                  setProjectId={setProjectId}
+                  discipline={discipline}
+                />
+              )}
             </Panel>
 
             <PanelResizeHandle className="w-1 bg-slate-200 hover:bg-brand-teal transition-colors cursor-col-resize" />

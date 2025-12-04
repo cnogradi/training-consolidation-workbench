@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { FileText, Image as ImageIcon, Maximize2, XCircle, Sparkles, Download } from 'lucide-react';
 import { useAppStore } from '../store';
 import { api } from '../api';
-import type { SourceSlide, TargetDraftNode } from '../api';
+import type { SourceSlide } from '../api';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 
@@ -18,6 +18,7 @@ export const SlideInspector: React.FC = () => {
     const [slide, setSlide] = useState<SourceSlide | null>(null);
     const [loading, setLoading] = useState(false);
     const [rendering, setRendering] = useState(false);
+    const [renderFormat, setRenderFormat] = useState<"pptx" | "typ">("pptx");
 
     // Refs for scrolling
     const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -47,8 +48,8 @@ export const SlideInspector: React.FC = () => {
         if (!projectId) return;
         setRendering(true);
         try {
-            await api.triggerRender(projectId);
-            alert("Render job started in background!");
+            await api.triggerRender(projectId, renderFormat);
+            alert(`Render job (${renderFormat}) started in background!`);
         } catch (e) {
             console.error(e);
             alert("Failed to trigger render.");
@@ -87,7 +88,7 @@ export const SlideInspector: React.FC = () => {
                     {synthesizedNodes.map((node, index) => (
                         <div
                             key={node.id}
-                            ref={el => nodeRefs.current[node.id] = el}
+                            ref={el => { nodeRefs.current[node.id] = el; }}
                             className={clsx(
                                 "bg-white border rounded-lg shadow-sm p-6 transition-all duration-500",
                                 node.id === activeNodeId ? "ring-2 ring-teal-600 shadow-md" : "border-slate-200 opacity-80 hover:opacity-100"
@@ -116,20 +117,30 @@ export const SlideInspector: React.FC = () => {
                     <div className="text-[10px] text-slate-400">
                         {synthesizedNodes.length} sections ready
                     </div>
-                    <button
-                        onClick={handleRender}
-                        disabled={rendering}
-                        className="bg-teal-600 text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                        {rendering ? (
-                            <span className="animate-pulse">Starting Job...</span>
-                        ) : (
-                            <>
-                                <Download size={14} />
-                                Render to File
-                            </>
-                        )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <select 
+                            value={renderFormat} 
+                            onChange={(e) => setRenderFormat(e.target.value as "pptx" | "typ")}
+                            className="text-xs border border-slate-300 rounded px-2 py-1 bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        >
+                            <option value="pptx">PPTX</option>
+                            <option value="typ">Typst Source</option>
+                        </select>
+                        <button
+                            onClick={handleRender}
+                            disabled={rendering}
+                            className="bg-teal-600 text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {rendering ? (
+                                <span className="animate-pulse">Starting Job...</span>
+                            ) : (
+                                <>
+                                    <Download size={14} />
+                                    Render to File
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         );
@@ -200,7 +211,7 @@ export const SlideInspector: React.FC = () => {
                                         "text-xs px-2 py-1 rounded-md flex items-center gap-2 border transition-colors",
                                         // Heatmap Logic: Highlight concept tag if it likely matches the search
                                         (heatmapMode && intensity > 0 && searchQuery && c.name.toLowerCase().includes(searchQuery.toLowerCase()))
-                                            ? (c.salience > 0.7
+                                            ? ((c.salience || 0) > 0.7
                                                 ? "bg-red-100 text-red-700 border-red-300 font-medium ring-1 ring-red-200"
                                                 : "bg-orange-100 text-orange-700 border-orange-300 font-medium ring-1 ring-orange-200")
                                             : "bg-teal-50 text-teal-600 border-teal-100"

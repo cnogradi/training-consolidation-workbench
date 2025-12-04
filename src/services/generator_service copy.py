@@ -1,36 +1,13 @@
 """
 Service for generating consolidated curricula from source materials.
+Refactored to support Weighted Concepts, Iterative Retrieval, and Master Outlines.
 """
 import uuid
-import os
-import yaml
 from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
 from src.storage.neo4j import Neo4jClient
 from src.storage.weaviate import WeaviateClient
 from src.dspy_modules.outline_harmonizer import OutlineHarmonizer
 from src.dspy_modules.config import shared_lm as lm
-import dspy
-
-# Configure DSPy using shared configuration
-# load_dotenv() and dspy.configure() are handled in src.dspy_modules.config
-
-# Load curriculum template from YAML
-def load_curriculum_template() -> List[Dict]:
-    """Load the curriculum template from YAML config."""
-    config_path = os.path.join(
-        os.path.dirname(__file__), 
-        '..', '..', 'config', 'curriculum_template.yaml'
-    )
-    try:
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-            return config.get('modules', [])
-    except FileNotFoundError:
-        print(f"[WARN] Template config not found at {config_path}, using defaults")
-        return []
-
-TEMPLATE_MODULES = load_curriculum_template()
 
 # Configure DSPy using shared configuration
 # load_dotenv() and dspy.configure() are handled in src.dspy_modules.config
@@ -44,7 +21,7 @@ class GeneratorService:
         self.weaviate_client = WeaviateClient()
         self.harmonizer = OutlineHarmonizer()
     
-    def generate_skeleton(self, selected_source_ids: List[str], title: str = "New Curriculum", master_course_id: Optional[str] = None, template_name: str = "standard") -> Dict[str, Any]:
+    def generate_skeleton(self, selected_source_ids: List[str], title: str = "New Curriculum", master_course_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate a curriculum skeleton from selected source sections/courses.
         
@@ -57,7 +34,7 @@ class GeneratorService:
             Dictionary with project_id and generated structure
         """
         # Step 1: Fetch source outlines from Neo4j
-        source_outlines, source_course_ids, known_source_concepts = self._fetch_source_outlines(selected_source_ids)
+        source_outlines, source_course_ids = self._fetch_source_outlines(selected_source_ids)
         
         if not source_outlines:
             raise ValueError("No source outlines found for the given IDs")
@@ -70,11 +47,9 @@ class GeneratorService:
             print(f"DEBUG: Using master outline from course: {master_course_id}")
             consolidated_sections = self._use_master_outline(master_course_id)
         else:
-            print("DEBUG: Cal Harmonizer with Weighted Concepts...")
-            # Create harmonizer with selected template
-            harmonizer = OutlineHarmonizer(template_name=template_name)
+            print("DEBUG: Calling harmonizer with Weighted Concepts...")
             # The Harmonizer now sees "Voltage (Primary)" vs "Safety (Mention)"
-            consolidated_sections = harmonizer(source_outlines)
+            consolidated_sections = self.harmonizer(source_outlines)
             
             # Inspect DSPy history to see prompt and response in console
             try:
@@ -91,22 +66,23 @@ class GeneratorService:
         enriched_sections = []
         for section in consolidated_sections:
             
-            # New Logic: Trust the explicit signal from the LLM
-            if section.get('rationale') == "NO_SOURCE_DATA" or not section.get('key_concepts'):
-                print(f"DEBUG: Section '{section['title']}' is explicitly empty. Creating placeholder.")
-                
-                enriched_sections.append({
-                    **section,
-                    'suggested_slides': [],
-                    'is_placeholder': True # Frontend renders this with a "Missing Content" warning
-                })
-                continue
-
-            # Normal logic for populated sections
-            suggested_slides = self._find_matching_slides_iterative(
-                section.get('key_concepts', []),
-                allowed_course_ids=source_course_ids
-            )
+            # Check if this section is AI-hallucinated (e.g., Mandatory Safety)
+            # If the AI suggests concepts that DO NOT exist in our source material, flag it.
+            key_concepts = section.get('key_concepts', [])
+            matching_concepts = [c for c in key_concepts if c in known_source_concepts]
+            
+            is_hallucinated = len(matching_concepts) == 0 and len(key_concepts) > 0
+            
+            if is_hallucinated:
+                print(f"DEBUG: Section '{section['title']}' appears to be a placeholder (No matching source concepts). Skipping auto-fill.")
+                suggested_slides = []
+                section['rationale'] += " (Content missing from source material - Please add manually)"
+            else:
+                # Use the new Iterative Search
+                suggested_slides = self._find_matching_slides_iterative(
+                    key_concepts,
+                    allowed_course_ids=source_course_ids
+                )
 
             enriched_sections.append({
                 **section,
@@ -147,104 +123,6 @@ class GeneratorService:
             'sections': enriched_sections
         }
 
-    def _fetch_all_slides_for_courses(self, course_ids: List[str]) -> List[Dict]:
-        """Fetch all slides for the given list of course IDs"""
-        if not course_ids:
-            return []
-            
-        query = """
-        MATCH (c:Course)-[:HAS_SLIDE]->(s:Slide)
-        WHERE c.id IN $course_ids
-        RETURN s.id as id, s.text as text
-        """
-        results = self.neo4j_client.execute_query(query, {"course_ids": course_ids})
-        return results
-    
-    
-    def _use_master_outline(self, master_course_id: str) -> List[Dict]:
-        """
-        Use a master course's outline as the structure for the new curriculum.
-        Wraps sections into the template defined in config/curriculum_template.yaml
-        Returns a list of sections with titles, rationale, key_concepts, and type.
-        """
-        query = """
-        MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
-        OPTIONAL MATCH (s)-[:COVERS]->(con:Concept)
-        WITH s, collect(distinct con.name) as concepts
-        RETURN s.id as id,
-               s.title as title,
-               s.level as level,
-               coalesce(s.concept_summary, concepts, []) as concepts
-        ORDER BY s.id
-        """
-        results = self.neo4j_client.execute_query(query, {"course_id": master_course_id})
-        
-        if not results:
-            print("[WARN] No sections found in master course")
-            return []
-        
-        # Build sections from YAML config
-        standard_sections = []
-        remaining_results = list(results)  # Copy for technical modules
-        
-        for module_config in TEMPLATE_MODULES:
-            key = module_config['key']
-            default_title = module_config.get('title', key.replace('_', ' ').title())
-            module_type = module_config.get('type', 'technical')
-            is_list = module_config.get('is_list', False)
-            is_mandatory = module_config.get('mandatory', False)
-            default_concepts = module_config.get('default_concepts', [])
-            
-            if is_list:
-                # Technical modules: use remaining source sections
-                # Skip first (intro) and last (assessment) if they exist
-                if len(remaining_results) > 2:
-                    tech_results = remaining_results[1:-1]
-                elif len(remaining_results) > 1:
-                    tech_results = remaining_results[1:]
-                else:
-                    tech_results = []
-                
-                for section in tech_results:
-                    standard_sections.append({
-                        'title': section['title'],
-                        'rationale': f"Technical content from master course: {section['title']}",
-                        'key_concepts': section.get('concepts', [])[:10],
-                        'type': module_type
-                    })
-            else:
-                # Single module
-                if key == 'overview' and remaining_results:
-                    # Use first section for intro
-                    intro = remaining_results[0]
-                    standard_sections.append({
-                        'title': intro['title'],
-                        'rationale': f"Introduction from master course: {intro['title']}",
-                        'key_concepts': intro.get('concepts', [])[:10],
-                        'type': module_type
-                    })
-                elif key == 'assessment' and len(remaining_results) > 1:
-                    # Use last section for assessment
-                    last = remaining_results[-1]
-                    standard_sections.append({
-                        'title': last['title'],
-                        'rationale': f"Assessment from master course: {last['title']}",
-                        'key_concepts': last.get('concepts', [])[:10],
-                        'type': module_type
-                    })
-                elif is_mandatory:
-                    # Create placeholder for mandatory modules
-                    standard_sections.append({
-                        'title': default_title,
-                        'rationale': f"Mandatory {key} module - review and populate with relevant information",
-                        'key_concepts': default_concepts,
-                        'type': module_type
-                    })
-        
-        print(f"[DEBUG] Master outline wrapped into {len(standard_sections)} standard sections")
-        return standard_sections
-
-    
     def _fetch_source_outlines(self, source_ids: List[str]) -> tuple:
         """
         Fetch outlines and FORMAT concepts with importance tags.
@@ -272,9 +150,9 @@ class GeneratorService:
         WHERE c_name IS NOT NULL
         
         RETURN target.title as section_title,
-                bu,
-                course_id,
-                collect({name: c_name, score: max_score}) as concepts
+               bu,
+               course_id,
+               collect({name: c_name, score: max_score}) as concepts
         ORDER BY bu, course_id
         """
         results = self.neo4j_client.execute_query(query, {"source_ids": source_ids})
@@ -314,7 +192,7 @@ class GeneratorService:
             })
         
         return outlines, list(course_ids), all_known_concepts
-    
+
     def _find_matching_slides_iterative(self, key_concepts: List[str], allowed_course_ids: List[str] = None) -> List[Dict]:
         """
         Iterative Search: Queries each concept individually to ensure specific coverage.
@@ -373,12 +251,49 @@ class GeneratorService:
 
         # Return list (limit to reasonable number, e.g. 6 slides max per section)
         return list(unique_slides.values())[:6]
-    
+
+    def _fetch_all_slides_for_courses(self, course_ids: List[str]) -> List[Dict]:
+        """Fetch all slides for the given list of course IDs to determine unassigned items."""
+        if not course_ids: return []
+        query = "MATCH (c:Course)-[:HAS_SLIDE]->(s:Slide) WHERE c.id IN $course_ids RETURN s.id as id, s.text as text"
+        return self.neo4j_client.execute_query(query, {"course_ids": course_ids})
+
+    def _use_master_outline(self, master_course_id: str) -> List[Dict]:
+        """
+        Use a master course's outline as the structure for the new curriculum.
+        """
+        query = """
+        MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
+        OPTIONAL MATCH (s)-[:COVERS]->(con:Concept)
+        WITH s, collect(distinct con.name) as concepts
+        RETURN s.id as id,
+               s.title as title,
+               s.level as level,
+               coalesce(s.concept_summary, concepts, []) as concepts
+        ORDER BY s.id
+        """
+        results = self.neo4j_client.execute_query(query, {"course_id": master_course_id})
+        
+        if not results:
+            print("[WARN] No sections found in master course")
+            return []
+        
+        # Simple wrapping for master outline
+        standard_sections = []
+        for section in results:
+            standard_sections.append({
+                'title': section['title'],
+                'rationale': f"From master course: {section['title']}",
+                'key_concepts': section.get('concepts', [])[:10],
+                'type': 'technical'
+            })
+        return standard_sections
+
     def _persist_project(self, sections: List[Dict], title: str = "New Curriculum") -> str:
         """Create Project and TargetNode entries in Neo4j"""
         project_id = str(uuid.uuid4())
         
-        # Create Project node with title
+        # Create Project node
         self.neo4j_client.execute_query(
             """
             CREATE (p:Project {
@@ -395,7 +310,6 @@ class GeneratorService:
         for i, section in enumerate(sections):
             target_id = f"{project_id}_target_{i}"
             
-            # Create TargetNode
             self.neo4j_client.execute_query(
                 """
                 MATCH (p:Project {id: $project_id})
@@ -406,9 +320,7 @@ class GeneratorService:
                     key_concepts: $key_concepts,
                     status: 'suggestion',
                     order: $order,
-                    is_unassigned: $is_unassigned,
-                    is_placeholder: $is_placeholder,
-                    section_type: $section_type
+                    is_unassigned: $is_unassigned
                 })
                 CREATE (p)-[:HAS_CHILD]->(t)
                 """,
@@ -416,12 +328,10 @@ class GeneratorService:
                     "project_id": project_id,
                     "target_id": target_id,
                     "title": section['title'],
-                    "rationale": section['rationale'],
+                    "rationale": section.get('rationale', ''),
                     "key_concepts": section.get('key_concepts', []),
                     "order": i,
-                    "is_unassigned": section.get('is_unassigned', False),
-                    "is_placeholder": section.get('is_placeholder', False),
-                    "section_type": section.get('type', 'technical')
+                    "is_unassigned": section.get('is_unassigned', False)
                 }
             )
             

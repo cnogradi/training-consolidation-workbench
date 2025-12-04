@@ -25,7 +25,9 @@ class TargetDraftNode(BaseModel):
     
     # Fields for suggestion workflow
     is_suggestion: bool = False
+    is_placeholder: bool = False # Flag for "NO_SOURCE_DATA" sections
     is_unassigned: bool = False # Flag for "Unassigned / For Review" section
+    section_type: Optional[str] = None # Template section type (introduction, mandatory_safety, technical, mandatory_assessment)
     rationale: Optional[str] = None  # AI-generated rationale for this section
     suggested_source_ids: List[str] = []  # Slide IDs suggested by AI
     order: Optional[int] = 0 # Display order
@@ -73,10 +75,13 @@ class SkeletonRequest(BaseModel):
     title: str = Field(description="Title for the new curriculum project")
     domain: Optional[str] = Field(None, description="Engineering domain/discipline")
     selected_source_ids: List[str] = Field(description="Source section/course IDs to merge")
+    master_course_id: Optional[str] = Field(None, description="If provided, use this course's outline as the master structure")
+    template_name: Optional[str] = Field("standard", description="Template to use for curriculum generation")
 
 
 class RenderRequest(BaseModel):
     project_id: str
+    format: str = "pptx" # "pptx" or "typ"
 
 class ProjectTreeResponse(BaseModel):
     """Full project tree structure with all nodes"""

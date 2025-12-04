@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
 import os
@@ -103,6 +103,61 @@ def get_course_slides(course_id: str):
     """
     results = neo4j_client.execute_query(query, {"course_id": course_id})
     return results
+
+@app.get("/source/course/{course_id}/sections", response_model=List[Dict[str, Any]])
+def get_course_sections(course_id: str):
+    """
+    Returns ALL sections (including nested subsections) for a specific course.
+    Uses pre-computed concept summaries or COVERS relationships.
+    """
+    query = """
+    MATCH (c:Course {id: $course_id})-[:HAS_SECTION*]->(s:Section)
+    
+    // Try to get concepts from:
+    // 1. Pre-computed summary property
+    // 2. Direct COVERS relationship (rolled up)
+    // 3. Linked slides (HAS_SLIDE)
+    
+    OPTIONAL MATCH (s)-[:COVERS]->(con:Concept)
+    WITH s, collect(con.name) as covered_concepts
+    
+    OPTIONAL MATCH (s)-[:HAS_SLIDE]->(sl:Slide)-[t:TEACHES]->(slide_con:Concept)
+    WHERE coalesce(t.salience, 0) >= 0.5
+    WITH s, covered_concepts, collect(distinct slide_con.name) as slide_concepts
+    
+    RETURN s.id as id, 
+           s.title as title, 
+           s.level as level,
+           // Priority: Property > COVERS > HAS_SLIDE > Empty
+           coalesce(s.concept_summary, covered_concepts[0..10], slide_concepts[0..10], []) as concepts
+    ORDER BY s.id
+    """
+    sections = neo4j_client.execute_query(query, {"course_id": course_id})
+    
+    # Get course-level concepts as a last resort fallback for the UI
+    # But only if a section truly has NO concepts
+    course_concepts_query = """
+    MATCH (c:Course {id: $course_id})-[:HAS_SLIDE]->(sl:Slide)-[t:TEACHES]->(con:Concept)
+    WHERE coalesce(t.salience, 0) >= 0.5
+    RETURN collect(distinct con.name)[0..10] as course_concepts
+    """
+    course_result = neo4j_client.execute_query(course_concepts_query, {"course_id": course_id})
+    course_concepts = course_result[0]["course_concepts"] if course_result else []
+    
+    formatted_results = []
+    for row in sections:
+        concepts = row["concepts"]
+        if not concepts:
+            concepts = course_concepts
+            
+        formatted_results.append({
+            "id": row["id"],
+            "title": row["title"],
+            "level": row.get("level", 0),
+            "concepts": concepts
+        })
+        
+    return formatted_results
 
 @app.get("/source/slide/{slide_id}", response_model=SourceSlide)
 def get_slide_details(slide_id: str):
@@ -441,15 +496,22 @@ def create_draft_project(title: str):
 def add_draft_node(parent_id: str, title: str):
     """
     Adds a new Section/Module to the new outline.
+    Defaults to 'technical' section type.
     """
     import uuid
     node_id = str(uuid.uuid4())
     
     query = """
     MATCH (parent {id: $parent_id})
-    CREATE (child:TargetNode {id: $id, title: $title, status: "empty", content_markdown: ""})
+    CREATE (child:TargetNode {
+        id: $id, 
+        title: $title, 
+        status: "draft", 
+        content_markdown: "",
+        section_type: "technical"
+    })
     MERGE (parent)-[:HAS_CHILD]->(child)
-    RETURN child.id as id, child.title as title, child.status as status
+    RETURN child.id as id, child.title as title, child.status as status, child.section_type as section_type
     """
     # Note: parent could be Project or TargetNode
     results = neo4j_client.execute_query(query, {"parent_id": parent_id, "id": node_id, "title": title})
@@ -463,7 +525,8 @@ def add_draft_node(parent_id: str, title: str):
         id=row["id"],
         title=row["title"],
         parent_id=parent_id,
-        status=row["status"]
+        status=row["status"],
+        section_type=row.get("section_type", "technical")
     )
 
 @app.put("/draft/node/map")
@@ -483,6 +546,61 @@ def map_slides_to_node(node_id: str, slide_ids: List[str]):
     """
     neo4j_client.execute_query(query, {"node_id": node_id, "slide_ids": slide_ids})
     return {"status": "success", "mapped_slides": len(slide_ids)}
+
+@app.put("/draft/node/content")
+def update_node_content(node_id: str, request: dict = Body(...)):
+    """
+    Updates the content_markdown property of a TargetNode.
+    Used for auto-saving edited synthesis content from the TipTap editor.
+    """
+    content_markdown = request.get("content_markdown", "")
+    
+    query = """
+    MATCH (t:TargetNode {id: $node_id})
+    SET t.content_markdown = $content
+    RETURN t.id as id
+    """
+    result = neo4j_client.execute_query(query, {"node_id": node_id, "content": content_markdown})
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Node not found")
+    
+    return {"status": "success", "node_id": node_id}
+
+@app.put("/draft/node/title")
+def update_node_title(node_id: str, request: dict = Body(...)):
+    """
+    Updates the title of a TargetNode.
+    Only allowed for non-mandatory sections (technical).
+    """
+    title = request.get("title", "")
+    
+    if not title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    
+    # Check if this is a mandatory section
+    check_query = """
+    MATCH (t:TargetNode {id: $node_id})
+    RETURN t.section_type as section_type
+    """
+    check_result = neo4j_client.execute_query(check_query, {"node_id": node_id})
+    
+    if not check_result:
+        raise HTTPException(status_code=404, detail="Node not found")
+    
+    section_type = check_result[0].get("section_type", "technical")
+    
+    if section_type in ['introduction', 'mandatory_safety', 'mandatory_assessment']:
+        raise HTTPException(status_code=403, detail="Cannot rename mandatory sections")
+    
+    query = """
+    MATCH (t:TargetNode {id: $node_id})
+    SET t.title = $title
+    RETURN t.id as id
+    """
+    result = neo4j_client.execute_query(query, {"node_id": node_id, "title": title})
+    
+    return {"status": "success", "node_id": node_id, "title": title}
 
 @app.get("/draft/structure/{project_id}", response_model=List[TargetDraftNode])
 def get_draft_structure(project_id: str):
@@ -507,7 +625,9 @@ def get_draft_structure(project_id: str):
     OPTIONAL MATCH (n)-[:DERIVED_FROM]->(s:Slide)
     OPTIONAL MATCH (n)-[:SUGGESTED_SOURCE]->(ss:Slide)
     RETURN n.id as id, n.title as title, n.status as status, n.content_markdown as content, 
-           n.rationale as rationale, n.order as order,
+           n.rationale as rationale, n.order as order, coalesce(n.is_unassigned, false) as is_unassigned,
+           coalesce(n.is_placeholder, false) as is_placeholder,
+           coalesce(n.section_type, 'technical') as section_type,
            parent.id as parent_id, 
            collect(distinct s.id) as source_refs,
            collect(distinct ss.id) as suggested_source_ids
@@ -549,7 +669,10 @@ def get_draft_structure(project_id: str):
             is_suggestion=is_suggestion,
             suggested_source_ids=row["suggested_source_ids"],
             rationale=row["rationale"],
-            order=row.get("order", 0)
+            order=row.get("order", 0),
+            is_unassigned=row.get("is_unassigned") or False,
+            is_placeholder=row.get("is_placeholder") or False,
+            section_type=row.get("section_type", "technical")
         ))
     return nodes
 
@@ -609,8 +732,49 @@ def get_synthesis_preview(node_id: str):
         
     return {"content": results[0]["content"], "status": results[0]["status"]}
 
-
 # --- F. Curriculum Generator ---
+
+@app.get("/templates/list")
+def list_templates():
+    """
+    List all available curriculum templates from the templates directory.
+    
+    Returns a list of template names (without .yaml extension).
+    """
+    import os
+    # Use absolute path from project root
+    templates_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'templates')
+    templates_dir = os.path.abspath(templates_dir)
+    
+    print(f"[DEBUG] Looking for templates in: {templates_dir}")
+    
+    try:
+        templates = []
+        if os.path.exists(templates_dir):
+            files = os.listdir(templates_dir)
+            print(f"[DEBUG] Found files: {files}")
+            
+            for filename in files:
+                if filename.endswith('.yaml'):
+                    template_name = filename[:-5]  # Remove .yaml extension
+                    templates.append({
+                        "name": template_name,
+                        "display_name": template_name.replace('_', ' ').title()
+                    })
+        else:
+            print(f"[WARN] Templates directory does not exist: {templates_dir}")
+        
+        if not templates:
+            # Return default if no templates found
+            templates = [{"name": "standard", "display_name": "Standard"}]
+        
+        print(f"[DEBUG] Returning {len(templates)} templates: {[t['name'] for t in templates]}")
+        return {"templates": templates}
+    except Exception as e:
+        print(f"Error listing templates: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"templates": [{"name": "standard", "display_name": "Standard"}]}
 
 @app.post("/curriculum/generate", response_model=GenerateSkeletonResponse)
 def generate_curriculum(request: GenerateSkeletonRequest):
@@ -650,7 +814,12 @@ def generate_project_skeleton(request: SkeletonRequest):
     service = GeneratorService()
     try:
         # Generate skeleton
-        result = service.generate_skeleton(request.selected_source_ids, title=request.title)
+        result = service.generate_skeleton(
+            request.selected_source_ids, 
+            title=request.title,
+            master_course_id=request.master_course_id,
+            template_name=request.template_name or "standard"
+        )
         
         # Fetch full project tree
         project_id = result['project_id']
@@ -668,6 +837,8 @@ def generate_project_skeleton(request: SkeletonRequest):
                    status: t.status,
                    order: t.order,
                    is_suggestion: true,
+                   is_unassigned: coalesce(t.is_unassigned, false),
+                   is_placeholder: coalesce(t.is_placeholder, false),
                    suggested_source_ids: suggested_ids,
                    source_refs: [],
                    parent_id: p.id,
@@ -730,6 +901,72 @@ def accept_suggested_node(node_id: str):
         "sources_linked": results[0]["sources_accepted"]
     }
 
+@app.delete("/draft/node/reject")
+def reject_suggested_node(node_id: str):
+    """
+    Reject an AI-suggested node.
+    
+    For mandatory sections (introduction, mandatory_safety, mandatory_assessment):
+    - Clear suggested sources but keep the node
+    - Convert to 'draft' status with empty sources
+    
+    For technical sections:
+    - Delete the node entirely
+    """
+    # First check the section type
+    check_query = """
+    MATCH (t:TargetNode {id: $node_id})
+    WHERE t.status = 'suggestion'
+    RETURN t.section_type as section_type
+    """
+    
+    check_results = neo4j_client.execute_query(check_query, {"node_id": node_id})
+    
+    if not check_results:
+        raise HTTPException(status_code=404, detail="Node not found or already processed")
+    
+    section_type = check_results[0].get("section_type", "technical")
+    
+    # Mandatory sections: keep node, clear suggestions
+    if section_type in ['introduction', 'mandatory_safety', 'mandatory_assessment']:
+        query = """
+        MATCH (t:TargetNode {id: $node_id})
+        WHERE t.status = 'suggestion'
+        
+        // Delete suggested sources but keep the node
+        OPTIONAL MATCH (t)-[r:SUGGESTED_SOURCE]->()
+        DELETE r
+        
+        // Update status to draft
+        SET t.status = 'draft'
+        
+        RETURN t.id as id, t.status as status
+        """
+        results = neo4j_client.execute_query(query, {"node_id": node_id})
+        
+        return {
+            "status": "cleared",
+            "node_id": node_id,
+            "action": "suggestions_cleared"
+        }
+    else:
+        # Technical sections: delete entirely
+        query = """
+        MATCH (t:TargetNode {id: $node_id})
+        WHERE t.status = 'suggestion'
+        
+        DETACH DELETE t
+        
+        RETURN $node_id as deleted_id
+        """
+        neo4j_client.execute_query(query, {"node_id": node_id})
+        
+        return {
+            "status": "rejected",
+            "node_id": node_id,
+            "action": "deleted"
+        }
+
 @app.post("/render/trigger")
 def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
     """
@@ -738,18 +975,94 @@ def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
     # 1. Verify Project
     query = """
     MATCH (p:Project {id: $id})
-    RETURN p.id
+    RETURN p.id, p.title
     """
     results = neo4j_client.execute_query(query, {"id": request.project_id})
     if not results:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    print(f"Triggering render for project {request.project_id}")
+    project_title = results[0].get("title", "Untitled_Project")
     
-    # 2. Trigger Dagster Job (Mocked/Placeholder for now)
-    # In production: dagster_client.submit_job_execution("render_pipeline", run_config={"ops": {"render": {"config": {"project_id": request.project_id}}}})
+    # Generate Filename
+    import re
+    # Sanitize title
+    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project_title)
     
-    return {"status": "queued", "message": "Render job submitted to Dagster"}
+    # Default to PPTX for now, as that's the primary desired output
+    # In the future, we can add a format parameter to the RenderRequest
+    file_extension = request.format.lower()
+    if file_extension not in ["pptx", "typ"]:
+        file_extension = "pptx"
+        
+    filename = f"{safe_title}_{request.project_id[:8]}.{file_extension}"
+    
+    print(f"Triggering render for project {request.project_id} -> {filename}")
+    
+    # 2. Add Dynamic Partition
+    try:
+        # Execute GraphQL mutation to add the dynamic partition
+        # Must provide repositorySelector and select fields from the Union return type
+        mutation = """
+        mutation AddPartition($partitionsDefName: String!, $partitionKey: String!, $repoName: String!, $repoLocation: String!) {
+          addDynamicPartition(
+            partitionsDefName: $partitionsDefName, 
+            partitionKey: $partitionKey,
+            repositorySelector: {
+              repositoryName: $repoName,
+              repositoryLocationName: $repoLocation
+            }
+          ) {
+            __typename
+            ... on PythonError {
+              message
+              stack
+            }
+          }
+        }
+        """
+        variables = {
+            "partitionsDefName": "published_files",
+            "partitionKey": filename,
+            "repoName": "__repository__",
+            "repoLocation": "src.pipelines.definitions"
+        }
+        
+        # The client's execute_query takes query and variables
+        if hasattr(dagster_client, "execute_query"):
+             res = dagster_client.execute_query(mutation, variables)
+        else:
+             res = dagster_client._execute(mutation, variables)
+             
+        print(f"Partition added response: {res}")
+        
+        # Check for GraphQL errors
+        if res.get("errors"):
+            raise Exception(str(res.get("errors")))
+            
+        # Check for functional errors (PythonError)
+        data = res.get("addDynamicPartition", {})
+        if data.get("__typename") == "PythonError":
+            raise Exception(f"Dagster error: {data.get('message')}")
+        
+    except Exception as e:
+        print(f"Error adding partition: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to register output partition: {str(e)}")
+
+    # 3. Trigger Dagster Job
+    # We use tags to specify the partition for the asset job
+    dagster_client.submit_job_execution(
+        "render_asset_job", 
+        run_config={
+            "ops": {
+                "rendered_course_file": {
+                    "config": {"project_id": request.project_id}
+                }
+            }
+        },
+        tags={"dagster/partition": filename}
+    )
+    
+    return {"status": "queued", "message": f"Render job submitted for {filename}"}
 
 if __name__ == "__main__":
     import uvicorn

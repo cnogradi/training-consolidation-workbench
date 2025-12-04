@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Sparkles, GripVertical, X, MessageSquare, ChevronRight, ChevronDown } from 'lucide-react';
@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { api } from '../api';
 import type { TargetDraftNode } from '../api';
 import { useAppStore } from '../store';
+import { MarkdownEditor } from './MarkdownEditor';
 
 // Reuse the SortableThumbnail from previous implementation (will need to export/move it or redefine)
 // For now, I'll redefine a simpler version or import if I extract it. 
@@ -84,6 +85,11 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
     const [synthesizing, setSynthesizing] = useState(false);
     const [expanded, setExpanded] = useState(true);
 
+    // Ref for the title input to enable auto-focus
+    const titleInputRef = useRef<HTMLInputElement>(null);
+    const newlyAddedNodeId = useAppStore(state => state.newlyAddedNodeId);
+    const setNewlyAddedNodeId = useAppStore(state => state.setNewlyAddedNodeId);
+
     // Determine effective items (manual sources OR suggested sources)
     const effectiveItems = node.is_suggestion
         ? (node.suggested_source_ids || [])
@@ -91,6 +97,15 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
 
     const [items, setItems] = useState(effectiveItems);
     const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+
+    // Auto-focus on newly added nodes
+    useEffect(() => {
+        if (newlyAddedNodeId === node.id && titleInputRef.current) {
+            titleInputRef.current.focus();
+            titleInputRef.current.select();
+            setNewlyAddedNodeId(null); // Clear after focusing
+        }
+    }, [newlyAddedNodeId, node.id, setNewlyAddedNodeId]);
 
     // Sync local items with props
     useEffect(() => {
@@ -161,8 +176,10 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
         }
     };
 
-    const isSuggestion = node.is_suggestion;
     const isUnassigned = node.title === "Unassigned / For Review";
+    // Robust check: Use flag OR fallback to rationale string for legacy data
+    const isPlaceholder = node.is_placeholder || node.rationale === "NO_SOURCE_DATA";
+    const isSuggestion = node.is_suggestion && !isPlaceholder;
 
     return (
         <div
@@ -185,15 +202,43 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                     {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
                 <div className="flex-1 mr-4">
-                    <input
-                        type="text"
-                        defaultValue={node.title}
-                        className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none w-full"
-                        readOnly={isSuggestion || isUnassigned}
-                    />
-                    {node.rationale && (
+                    {/* Title is editable for technical sections only */}
+                    {node.section_type === 'technical' ? (
+                        <input
+                            ref={titleInputRef}
+                            type="text"
+                            defaultValue={node.title}
+                            className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none focus:ring-1 focus:ring-brand-teal/30 focus:bg-white rounded px-1 -ml-1 w-full"
+                            onBlur={async (e) => {
+                                const newTitle = e.target.value.trim();
+                                if (newTitle && newTitle !== node.title) {
+                                    try {
+                                        await api.updateNodeTitle(node.id, newTitle);
+                                        onRefresh();
+                                    } catch (err) {
+                                        console.error("Failed to update title", err);
+                                        e.target.value = node.title; // Revert
+                                    }
+                                }
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.currentTarget.blur();
+                                }
+                            }}
+                        />
+                    ) : (
+                        <span className="font-bold text-slate-800 text-sm">{node.title}</span>
+                    )}
+                    {node.rationale && !isPlaceholder && (
                         <div className="text-[10px] text-slate-500 mt-0.5 italic truncate">
                             {node.rationale}
+                        </div>
+                    )}
+                    {isPlaceholder && (
+                        <div className="text-[10px] text-amber-600 mt-0.5 italic truncate flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                            Content missing from source material
                         </div>
                     )}
                 </div>
@@ -269,15 +314,32 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-white/50 rounded-lg border border-purple-100 border-dashed">
                                 <Sparkles size={24} className="text-purple-300 mb-3" />
                                 <h4 className="text-sm font-medium text-purple-900 mb-1">AI Suggested Section</h4>
+
+                                {node.rationale && (
+                                    <div className="mb-4 px-4 py-2 bg-purple-50 rounded border border-purple-100 text-xs text-purple-800 italic relative">
+                                        <span className="absolute top-0 left-1 text-purple-300 text-lg">"</span>
+                                        {node.rationale}
+                                        <span className="absolute bottom-0 right-1 text-purple-300 text-lg">"</span>
+                                    </div>
+                                )}
+
                                 <p className="text-xs text-purple-600 mb-4 max-w-xs">
                                     Review the suggested sources and rationale. Accept to edit and synthesize.
                                 </p>
                                 <div className="flex gap-3">
                                     <button
-                                        onClick={() => { /* TODO: Reject logic */ }}
+                                        onClick={async () => {
+                                            try {
+                                                await api.rejectSuggestedNode(node.id);
+                                                onRefresh();
+                                            } catch (e) {
+                                                console.error("Failed to reject suggestion", e);
+                                                alert("Failed to reject suggestion");
+                                            }
+                                        }}
                                         className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                     >
-                                        Reject
+                                        {node.section_type === 'technical' ? 'Reject' : 'Clear Suggestions'}
                                     </button>
                                     <button
                                         onClick={handleAccept}
@@ -307,29 +369,59 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                     Clear All Unassigned
                                 </button>
                             </div>
+                        ) : isPlaceholder && items.length === 0 && !node.content_markdown ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-slate-50 rounded-lg border border-slate-200 border-dashed">
+                                <div className="text-slate-400 mb-2">
+                                    <Sparkles size={20} className="mx-auto mb-2 opacity-50" />
+                                    <p className="font-medium text-sm text-slate-600">No Content Found</p>
+                                    <p className="text-xs mt-1 max-w-xs mx-auto text-slate-500">
+                                        The source material didn't contain information for this section.
+                                    </p>
+                                </div>
+                                <div className="text-[10px] text-slate-400 italic">
+                                    Drag relevant slides here or write content manually.
+                                </div>
+                            </div>
                         ) : (
                             <>
                                 <div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-wider">
                                     Synthesis
                                 </div>
 
-                                {/* Output Preview (if exists) */}
+                                {/* Output Preview/Editor (if exists) */}
                                 {node.content_markdown ? (
-                                    <div
-                                        className="prose prose-sm max-w-none mb-4 p-3 bg-white border border-slate-100 rounded-lg shadow-sm cursor-pointer hover:ring-1 hover:ring-brand-teal/30 transition-all"
-                                        onClick={() => {
-                                            // Set active Node ID (which we'll use in Inspector)
-                                            // We need to ensure we don't conflict with activeSlideId
-                                            // The Inspector currently checks activeSlideId.
-                                            // We might need to clear activeSlideId when setting activeNodeId or handle priority.
-                                            useAppStore.getState().setActiveSlideId(null);
-                                            useAppStore.getState().setActiveNodeId(node.id);
-                                        }}
-                                    >
-                                        <div className="whitespace-pre-wrap text-slate-700 text-sm pointer-events-none">{node.content_markdown}</div>
-                                        <div className="text-[10px] text-brand-teal mt-2 flex items-center gap-1 font-medium">
-                                            <Sparkles size={10} />
-                                            Click to inspect generated content
+                                    <div className="mb-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                Editable Content
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    // Set active Node ID to show in Inspector
+                                                    useAppStore.getState().setActiveSlideId(null);
+                                                    useAppStore.getState().setActiveNodeId(node.id);
+                                                }}
+                                                className="text-xs text-brand-teal hover:text-brand-teal-dark flex items-center gap-1 font-medium transition-colors"
+                                            >
+                                                <Sparkles size={12} />
+                                                View Preview →
+                                            </button>
+                                        </div>
+                                        <MarkdownEditor
+                                            content={node.content_markdown}
+                                            onSave={async (markdown) => {
+                                                try {
+                                                    await api.updateNodeContent(node.id, markdown);
+                                                    // Optionally refresh to show updated content
+                                                    // onRefresh();
+                                                } catch (e) {
+                                                    console.error('Failed to save content:', e);
+                                                }
+                                            }}
+                                        />
+                                        <div className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+                                            <Sparkles size={10} className="text-brand-teal" />
+                                            Auto-saved as you type
                                         </div>
                                     </div>
                                 ) : null}

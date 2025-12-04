@@ -24,7 +24,9 @@ export interface TargetDraftNode {
     content_markdown?: string;
     // Suggestion fields
     is_suggestion?: boolean;
+    is_placeholder?: boolean; // Flag for "NO_SOURCE_DATA" sections
     is_unassigned?: boolean; // Flag for "Unassigned / For Review" section
+    section_type?: string; // Template section type (introduction, mandatory_safety, technical, mandatory_assessment)
     suggested_source_ids?: string[];
     rationale?: string;
     order?: number;
@@ -39,6 +41,13 @@ export interface CourseNode {
     has_children?: boolean;
 }
 
+export interface CourseSection {
+    id: string;
+    title: string;
+    level?: number;
+    concepts: string[];
+}
+
 export const api = {
     getSourceTree: async (discipline?: string) => {
         const params = discipline ? { engineering_discipline: discipline } : {};
@@ -47,6 +56,10 @@ export const api = {
     },
     getCourseSlides: async (courseId: string) => {
         const res = await axios.get<{ id: string, number: number, text: string }[]>(`${API_URL}/source/course/${courseId}/slides`);
+        return res.data;
+    },
+    getCourseSections: async (courseId: string) => {
+        const res = await axios.get<CourseSection[]>(`${API_URL}/source/course/${courseId}/sections`);
         return res.data;
     },
     getSlideDetails: async (slideId: string) => {
@@ -93,8 +106,14 @@ export const api = {
         title: string;
         domain: string | null;
         selected_source_ids: string[];
+        master_course_id?: string | null;
+        template_name?: string;
     }) => {
         const res = await axios.post(`${API_URL}/project/generate_skeleton`, request);
+        return res.data;
+    },
+    getTemplates: async () => {
+        const res = await axios.get<{ templates: Array<{ name: string; display_name: string }> }>(`${API_URL}/templates/list`);
         return res.data;
     },
     acceptSuggestedNode: async (nodeId: string) => {
@@ -103,12 +122,30 @@ export const api = {
         });
         return res.data;
     },
-    triggerRender: async (projectId: string) => {
-        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId });
+    rejectSuggestedNode: async (nodeId: string) => {
+        const res = await axios.delete(`${API_URL}/draft/node/reject`, {
+            params: { node_id: nodeId }
+        });
+        return res.data;
+    },
+    triggerRender: async (projectId: string, format: string = "pptx") => {
+        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId, format });
         return res.data;
     },
     getConceptHeatmap: async (term: string) => {
         const res = await axios.get<Record<string, { score: number, type: 'course' | 'slide' }>>(`${API_URL}/source/heatmap/${term}`);
+        return res.data;
+    },
+    updateNodeContent: async (nodeId: string, markdown: string) => {
+        const res = await axios.put(`${API_URL}/draft/node/content`, { content_markdown: markdown }, {
+            params: { node_id: nodeId }
+        });
+        return res.data;
+    },
+    updateNodeTitle: async (nodeId: string, title: string) => {
+        const res = await axios.put(`${API_URL}/draft/node/title`, { title }, {
+            params: { node_id: nodeId }
+        });
         return res.data;
     },
 };
