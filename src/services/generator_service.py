@@ -380,7 +380,8 @@ class GeneratorService:
                     key_concepts: $key_concepts,
                     status: 'suggestion',
                     order: $order,
-                    is_unassigned: $is_unassigned
+                    is_unassigned: $is_unassigned,
+                    is_placeholder: $is_placeholder
                 })
                 CREATE (p)-[:HAS_CHILD]->(t)
                 """,
@@ -391,7 +392,8 @@ class GeneratorService:
                     "rationale": section['rationale'],
                     "key_concepts": section.get('key_concepts', []),
                     "order": i,
-                    "is_unassigned": section.get('is_unassigned', False)
+                    "is_unassigned": section.get('is_unassigned', False),
+                    "is_placeholder": section.get('is_placeholder', False)
                 }
             )
             

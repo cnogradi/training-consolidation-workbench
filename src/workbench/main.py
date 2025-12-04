@@ -583,6 +583,7 @@ def get_draft_structure(project_id: str):
     OPTIONAL MATCH (n)-[:SUGGESTED_SOURCE]->(ss:Slide)
     RETURN n.id as id, n.title as title, n.status as status, n.content_markdown as content, 
            n.rationale as rationale, n.order as order, coalesce(n.is_unassigned, false) as is_unassigned,
+           coalesce(n.is_placeholder, false) as is_placeholder,
            parent.id as parent_id, 
            collect(distinct s.id) as source_refs,
            collect(distinct ss.id) as suggested_source_ids
@@ -625,7 +626,8 @@ def get_draft_structure(project_id: str):
             suggested_source_ids=row["suggested_source_ids"],
             rationale=row["rationale"],
             order=row.get("order", 0),
-            is_unassigned=row.get("is_unassigned") or False
+            is_unassigned=row.get("is_unassigned") or False,
+            is_placeholder=row.get("is_placeholder") or False
         ))
     return nodes
 
@@ -749,6 +751,7 @@ def generate_project_skeleton(request: SkeletonRequest):
                    order: t.order,
                    is_suggestion: true,
                    is_unassigned: coalesce(t.is_unassigned, false),
+                   is_placeholder: coalesce(t.is_placeholder, false),
                    suggested_source_ids: suggested_ids,
                    source_refs: [],
                    parent_id: p.id,

@@ -162,8 +162,10 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
         }
     };
 
-    const isSuggestion = node.is_suggestion;
     const isUnassigned = node.title === "Unassigned / For Review";
+    // Robust check: Use flag OR fallback to rationale string for legacy data
+    const isPlaceholder = node.is_placeholder || node.rationale === "NO_SOURCE_DATA";
+    const isSuggestion = node.is_suggestion && !isPlaceholder;
 
     return (
         <div
@@ -192,9 +194,15 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                         className="bg-transparent font-bold text-slate-800 text-sm focus:outline-none w-full"
                         readOnly={isSuggestion || isUnassigned}
                     />
-                    {node.rationale && (
+                    {node.rationale && !isPlaceholder && (
                         <div className="text-[10px] text-slate-500 mt-0.5 italic truncate">
                             {node.rationale}
+                        </div>
+                    )}
+                    {isPlaceholder && (
+                        <div className="text-[10px] text-amber-600 mt-0.5 italic truncate flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                            Content missing from source material
                         </div>
                     )}
                 </div>
@@ -270,6 +278,15 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-white/50 rounded-lg border border-purple-100 border-dashed">
                                 <Sparkles size={24} className="text-purple-300 mb-3" />
                                 <h4 className="text-sm font-medium text-purple-900 mb-1">AI Suggested Section</h4>
+
+                                {node.rationale && (
+                                    <div className="mb-4 px-4 py-2 bg-purple-50 rounded border border-purple-100 text-xs text-purple-800 italic relative">
+                                        <span className="absolute top-0 left-1 text-purple-300 text-lg">"</span>
+                                        {node.rationale}
+                                        <span className="absolute bottom-0 right-1 text-purple-300 text-lg">"</span>
+                                    </div>
+                                )}
+
                                 <p className="text-xs text-purple-600 mb-4 max-w-xs">
                                     Review the suggested sources and rationale. Accept to edit and synthesize.
                                 </p>
@@ -307,6 +324,19 @@ export const SynthBlock: React.FC<SynthBlockProps> = ({ node, onRefresh }) => {
                                     <X size={14} />
                                     Clear All Unassigned
                                 </button>
+                            </div>
+                        ) : isPlaceholder && items.length === 0 && !node.content_markdown ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 bg-slate-50 rounded-lg border border-slate-200 border-dashed">
+                                <div className="text-slate-400 mb-2">
+                                    <Sparkles size={20} className="mx-auto mb-2 opacity-50" />
+                                    <p className="font-medium text-sm text-slate-600">No Content Found</p>
+                                    <p className="text-xs mt-1 max-w-xs mx-auto text-slate-500">
+                                        The source material didn't contain information for this section.
+                                    </p>
+                                </div>
+                                <div className="text-[10px] text-slate-400 italic">
+                                    Drag relevant slides here or write content manually.
+                                </div>
                             </div>
                         ) : (
                             <>

@@ -24,6 +24,7 @@ export interface TargetDraftNode {
     content_markdown?: string;
     // Suggestion fields
     is_suggestion?: boolean;
+    is_placeholder?: boolean; // Flag for "NO_SOURCE_DATA" sections
     is_unassigned?: boolean; // Flag for "Unassigned / For Review" section
     suggested_source_ids?: string[];
     rationale?: string;
