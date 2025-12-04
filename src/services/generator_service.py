@@ -3,6 +3,7 @@ Service for generating consolidated curricula from source materials.
 """
 import uuid
 import os
+import yaml
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from src.storage.neo4j import Neo4jClient
@@ -10,6 +11,26 @@ from src.storage.weaviate import WeaviateClient
 from src.dspy_modules.outline_harmonizer import OutlineHarmonizer
 from src.dspy_modules.config import shared_lm as lm
 import dspy
+
+# Configure DSPy using shared configuration
+# load_dotenv() and dspy.configure() are handled in src.dspy_modules.config
+
+# Load curriculum template from YAML
+def load_curriculum_template() -> List[Dict]:
+    """Load the curriculum template from YAML config."""
+    config_path = os.path.join(
+        os.path.dirname(__file__), 
+        '..', '..', 'config', 'curriculum_template.yaml'
+    )
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            return config.get('modules', [])
+    except FileNotFoundError:
+        print(f"[WARN] Template config not found at {config_path}, using defaults")
+        return []
+
+TEMPLATE_MODULES = load_curriculum_template()
 
 # Configure DSPy using shared configuration
 # load_dotenv() and dspy.configure() are handled in src.dspy_modules.config
@@ -141,7 +162,7 @@ class GeneratorService:
     def _use_master_outline(self, master_course_id: str) -> List[Dict]:
         """
         Use a master course's outline as the structure for the new curriculum.
-        Wraps sections into the standard template: Introduction → Safety → Technical → Assessment
+        Wraps sections into the template defined in config/curriculum_template.yaml
         Returns a list of sections with titles, rationale, key_concepts, and type.
         """
         query = """
@@ -160,60 +181,63 @@ class GeneratorService:
             print("[WARN] No sections found in master course")
             return []
         
-        # Build standard template structure from master sections
+        # Build sections from YAML config
         standard_sections = []
+        remaining_results = list(results)  # Copy for technical modules
         
-        # 1. Introduction (use first section or create placeholder)
-        intro_section = results[0] if results else None
-        if intro_section:
-            standard_sections.append({
-                'title': intro_section['title'],
-                'rationale': f"Introduction from master course: {intro_section['title']}",
-                'key_concepts': intro_section.get('concepts', [])[:10],
-                'type': 'introduction'
-            })
-        else:
-            standard_sections.append({
-                'title': 'Course Introduction',
-                'rationale': 'Placeholder introduction section',
-                'key_concepts': [],
-                'type': 'introduction'
-            })
-        
-        # 2. Safety Module (create placeholder - master courses typically don't have explicit safety sections)
-        standard_sections.append({
-            'title': 'Safety and Compliance',
-            'rationale': 'Mandatory safety module - review and populate with relevant safety information',
-            'key_concepts': ['Safety Procedures', 'Hazard Identification', 'Compliance Requirements'],
-            'type': 'mandatory_safety'
-        })
-        
-        # 3. Technical Content (all remaining master sections except last)
-        technical_sections = results[1:-1] if len(results) > 2 else results[1:] if len(results) > 1 else []
-        for section in technical_sections:
-            standard_sections.append({
-                'title': section['title'],
-                'rationale': f"Technical content from master course: {section['title']}",
-                'key_concepts': section.get('concepts', [])[:10],
-                'type': 'technical'
-            })
-        
-        # 4. Assessment (use last section or create placeholder)
-        if len(results) > 1:
-            last_section = results[-1]
-            standard_sections.append({
-                'title': last_section['title'],
-                'rationale': f"Assessment from master course: {last_section['title']}",
-                'key_concepts': last_section.get('concepts', [])[:10],
-                'type': 'mandatory_assessment'
-            })
-        else:
-            standard_sections.append({
-                'title': 'Knowledge Assessment',
-                'rationale': 'Placeholder assessment section',
-                'key_concepts': ['Quiz', 'Review', 'Final Assessment'],
-                'type': 'mandatory_assessment'
-            })
+        for module_config in TEMPLATE_MODULES:
+            key = module_config['key']
+            default_title = module_config.get('title', key.replace('_', ' ').title())
+            module_type = module_config.get('type', 'technical')
+            is_list = module_config.get('is_list', False)
+            is_mandatory = module_config.get('mandatory', False)
+            default_concepts = module_config.get('default_concepts', [])
+            
+            if is_list:
+                # Technical modules: use remaining source sections
+                # Skip first (intro) and last (assessment) if they exist
+                if len(remaining_results) > 2:
+                    tech_results = remaining_results[1:-1]
+                elif len(remaining_results) > 1:
+                    tech_results = remaining_results[1:]
+                else:
+                    tech_results = []
+                
+                for section in tech_results:
+                    standard_sections.append({
+                        'title': section['title'],
+                        'rationale': f"Technical content from master course: {section['title']}",
+                        'key_concepts': section.get('concepts', [])[:10],
+                        'type': module_type
+                    })
+            else:
+                # Single module
+                if key == 'overview' and remaining_results:
+                    # Use first section for intro
+                    intro = remaining_results[0]
+                    standard_sections.append({
+                        'title': intro['title'],
+                        'rationale': f"Introduction from master course: {intro['title']}",
+                        'key_concepts': intro.get('concepts', [])[:10],
+                        'type': module_type
+                    })
+                elif key == 'assessment' and len(remaining_results) > 1:
+                    # Use last section for assessment
+                    last = remaining_results[-1]
+                    standard_sections.append({
+                        'title': last['title'],
+                        'rationale': f"Assessment from master course: {last['title']}",
+                        'key_concepts': last.get('concepts', [])[:10],
+                        'type': module_type
+                    })
+                elif is_mandatory:
+                    # Create placeholder for mandatory modules
+                    standard_sections.append({
+                        'title': default_title,
+                        'rationale': f"Mandatory {key} module - review and populate with relevant information",
+                        'key_concepts': default_concepts,
+                        'type': module_type
+                    })
         
         print(f"[DEBUG] Master outline wrapped into {len(standard_sections)} standard sections")
         return standard_sections

@@ -1,10 +1,80 @@
 """
 DSPy module for harmonizing multiple course outlines into a single consolidated curriculum
-following a Standard Engineering Course Template.
+following a configurable Standard Engineering Course Template.
 """
 import dspy
+import yaml
+import os
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
+
+# --- 0. Load Template Configuration ---
+
+def load_curriculum_template() -> List[Dict]:
+    """Load the curriculum template from YAML config."""
+    config_path = os.path.join(
+        os.path.dirname(__file__), 
+        '..', '..', 'config', 'curriculum_template.yaml'
+    )
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            return config.get('modules', [])
+    except FileNotFoundError:
+        print(f"[WARN] Template config not found at {config_path}, using defaults")
+        return []
+
+TEMPLATE_MODULES = load_curriculum_template()
+
+def build_dynamic_prompt() -> str:
+    """Build the LLM prompt dynamically from YAML config."""
+    if not TEMPLATE_MODULES:
+        return "You are an expert Instructional Designer. Create a unified course structure."
+    
+    # Build numbered list and JSON structure
+    numbered_list = []
+    json_structure = {}
+    
+    for i, module in enumerate(TEMPLATE_MODULES):
+        key = module['key']
+        is_list = module.get('is_list', False)
+        desc = module.get('description', '')
+        
+        # For list modules, use description; for single modules, use title
+        if is_list:
+            display_name = desc.split('.')[0] if desc else key.replace('_', ' ').title()
+        else:
+            display_name = module.get('title') or key.replace('_', ' ').title()
+        
+        numbered_list.append(f"{i+1}. {display_name}")
+        
+        if is_list:
+            json_structure[key] = '[{"title": "...", "rationale": "...", "key_concepts": [...]}]'
+        else:
+            json_structure[key] = '{"title": "...", "rationale": "...", "key_concepts": [...]}'
+    
+    prompt = f"""You are an expert Instructional Designer for Engineering.
+Given outlines from multiple business units, create a Unified Standard Course.
+
+You MUST follow this template:
+{chr(10).join(numbered_list)}
+
+Output as JSON matching this structure:
+{{
+{chr(10).join([f'  "{k}": {v},' for k, v in json_structure.items()])[:-1]}
+}}
+
+CRITICAL INSTRUCTIONS FOR MISSING CONTENT:
+1. You MUST include ALL standard modules even if source material is missing.
+2. If source material does NOT contain concepts relevant to a module:
+   - Create the module in the JSON.
+   - Set 'key_concepts' to an EMPTY LIST [].
+   - Set 'rationale' to "NO_SOURCE_DATA".
+3. DO NOT invent or hallucinate concepts. Only use concepts derived from input.
+4. For technical_modules, create MULTIPLE sections by merging and de-duplicating source topics into a logical flow (Fundamentals -> Advanced).
+"""
+    
+    return prompt
 
 # --- 1. Input Models ---
 
@@ -14,64 +84,18 @@ class SourceOutline(BaseModel):
     section_title: str = Field(description="Title of the section")
     concepts: List[str] = Field(description="Key concepts taught in this section")
 
-# --- 2. Output Models (The "Sandwich" Structure) ---
+# --- 2. Output Models ---
 
 class TargetSection(BaseModel):
     """A proposed section in the consolidated curriculum"""
     title: str = Field(description="Title for the target section")
     rationale: str = Field(description="Why this section is needed")
     key_concepts: List[str] = Field(description="Top 3-5 concepts to teach")
-    # Note: 'suggested_slides' will be populated by the Service layer, not the LLM
-
-class StandardCoursePlan(BaseModel):
-    """
-    The enforced structure for all Engineering Courses.
-    The LLM must populate these specific slots.
-    """
-    overview: TargetSection = Field(
-        description="Module 0: Intro, Purpose, Scope, and Prerequisites."
-    )
-    safety_module: TargetSection = Field(
-        description="Module 1: Safety, Hazards, and Compliance relevant to these specific topics."
-    )
-    technical_modules: List[TargetSection] = Field(
-        description="The core teaching modules. Merge source topics into a logical flow (Fundamentals -> Advanced)."
-    )
-    assessment: TargetSection = Field(
-        description="Module N: Knowledge checks, quizzes, and final review."
-    )
 
 # --- 3. The Signature ---
 
 class GenerateConsolidatedSkeleton(dspy.Signature):
-    """
-    You are an expert Instructional Designer for Engineering.
-    Given outlines from multiple business units, create a Unified Standard Course.
-    
-    You MUST follow the standard template:
-    1. Introduction (Overview)
-    2. Safety (Mandatory)
-    3. Technical Content (Merged & De-duplicated)
-    4. Assessment
-    
-    Output as JSON matching this structure:
-    {
-      "overview": {"title": "...", "rationale": "...", "key_concepts": [...]},
-      "safety_module": {"title": "...", "rationale": "...", "key_concepts": [...]},
-      "technical_modules": [{"title": "...", "rationale": "...", "key_concepts": [...]}],
-      "assessment": {"title": "...", "rationale": "...", "key_concepts": [...]}
-    }
-    
-    If sources lack safety/assessment content, define placeholder sections anyway.
-
-    CRITICAL INSTRUCTIONS FOR MISSING CONTENT:
-    1. You MUST include the standard modules (Introduction, Safety, Assessment) even if source material is missing.
-    2. However, if the source material does NOT contain concepts relevant to a module (e.g., no safety info provided):
-       - Create the module in the JSON.
-       - Set 'key_concepts' to an EMPTY LIST [].
-       - Set 'rationale' to "NO_SOURCE_DATA".
-    3. DO NOT invent or hallunicate concepts to fill these gaps. Only use concepts derived from the input.
-    """
+    __doc__ = build_dynamic_prompt()
     
     # Input: Raw string representation of the source JSON
     source_outlines: str = dspy.InputField(
@@ -80,7 +104,7 @@ class GenerateConsolidatedSkeleton(dspy.Signature):
     
     # Output: JSON string matching StandardCoursePlan structure
     consolidated_plan: str = dspy.OutputField(
-        desc="JSON object with overview, safety_module, technical_modules, and assessment"
+        desc="JSON object matching the template structure"
     )
 
 
@@ -91,8 +115,8 @@ class OutlineHarmonizer(dspy.Module):
     
     def __init__(self):
         super().__init__()
-        # ChainOfThought works with all DSPy versions
         self.generate = dspy.ChainOfThought(GenerateConsolidatedSkeleton)
+        self.template_modules = TEMPLATE_MODULES
     
     def forward(self, source_outlines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -117,39 +141,28 @@ class OutlineHarmonizer(dspy.Module):
         
         # 3. Parse the JSON output
         try:
-            # The LLM should return a JSON object matching StandardCoursePlan
             plan_data = json.loads(prediction.consolidated_plan)
             
-            # Validate structure
             if not isinstance(plan_data, dict):
                 raise ValueError("Expected dict for StandardCoursePlan")
             
-            # 4. Flatten to List (Standard Template Order)
+            # 4. Flatten to List using YAML config order
             final_tree = []
             
-            # Slot 1: Overview/Introduction
-            if 'overview' in plan_data:
-                overview_dict = plan_data['overview']
-                overview_dict['type'] = 'introduction'
-                final_tree.append(overview_dict)
-            
-            # Slot 2: Safety (Mandatory)
-            if 'safety_module' in plan_data:
-                safety_dict = plan_data['safety_module']
-                safety_dict['type'] = 'mandatory_safety'
-                final_tree.append(safety_dict)
-            
-            # Slot 3: Technical Modules (Core Content)
-            if 'technical_modules' in plan_data and isinstance(plan_data['technical_modules'], list):
-                for module in plan_data['technical_modules']:
-                    module['type'] = 'technical'
-                    final_tree.append(module)
-            
-            # Slot 4: Assessment
-            if 'assessment' in plan_data:
-                assess_dict = plan_data['assessment']
-                assess_dict['type'] = 'mandatory_assessment'
-                final_tree.append(assess_dict)
+            for module_config in self.template_modules:
+                key = module_config['key']
+                module_type = module_config.get('type', 'technical')
+                is_list = module_config.get('is_list', False)
+                
+                if key in plan_data:
+                    if is_list and isinstance(plan_data[key], list):
+                        for item in plan_data[key]:
+                            item['type'] = module_type
+                            final_tree.append(item)
+                    else:
+                        section_dict = plan_data[key]
+                        section_dict['type'] = module_type
+                        final_tree.append(section_dict)
             
             print(f"[DEBUG] Generated standard course with {len(final_tree)} modules")
             return final_tree
@@ -162,7 +175,6 @@ class OutlineHarmonizer(dspy.Module):
             try:
                 sections_list = json.loads(prediction.consolidated_plan)
                 if isinstance(sections_list, list):
-                    # Add default types
                     for s in sections_list:
                         if 'type' not in s:
                             s['type'] = 'technical'
@@ -170,7 +182,6 @@ class OutlineHarmonizer(dspy.Module):
             except:
                 pass
             
-            # Last resort: return source outlines as-is
             print("[ERROR] Using fallback: returning source outlines")
             return self._fallback_merge(source_outlines)
     
