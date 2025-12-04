@@ -933,18 +933,94 @@ def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
     # 1. Verify Project
     query = """
     MATCH (p:Project {id: $id})
-    RETURN p.id
+    RETURN p.id, p.title
     """
     results = neo4j_client.execute_query(query, {"id": request.project_id})
     if not results:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    print(f"Triggering render for project {request.project_id}")
+    project_title = results[0].get("title", "Untitled_Project")
     
-    # 2. Trigger Dagster Job (Mocked/Placeholder for now)
-    # In production: dagster_client.submit_job_execution("render_pipeline", run_config={"ops": {"render": {"config": {"project_id": request.project_id}}}})
+    # Generate Filename
+    import re
+    # Sanitize title
+    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project_title)
     
-    return {"status": "queued", "message": "Render job submitted to Dagster"}
+    # Default to PPTX for now, as that's the primary desired output
+    # In the future, we can add a format parameter to the RenderRequest
+    file_extension = request.format.lower()
+    if file_extension not in ["pptx", "typ"]:
+        file_extension = "pptx"
+        
+    filename = f"{safe_title}_{request.project_id[:8]}.{file_extension}"
+    
+    print(f"Triggering render for project {request.project_id} -> {filename}")
+    
+    # 2. Add Dynamic Partition
+    try:
+        # Execute GraphQL mutation to add the dynamic partition
+        # Must provide repositorySelector and select fields from the Union return type
+        mutation = """
+        mutation AddPartition($partitionsDefName: String!, $partitionKey: String!, $repoName: String!, $repoLocation: String!) {
+          addDynamicPartition(
+            partitionsDefName: $partitionsDefName, 
+            partitionKey: $partitionKey,
+            repositorySelector: {
+              repositoryName: $repoName,
+              repositoryLocationName: $repoLocation
+            }
+          ) {
+            __typename
+            ... on PythonError {
+              message
+              stack
+            }
+          }
+        }
+        """
+        variables = {
+            "partitionsDefName": "published_files",
+            "partitionKey": filename,
+            "repoName": "__repository__",
+            "repoLocation": "src.pipelines.definitions"
+        }
+        
+        # The client's execute_query takes query and variables
+        if hasattr(dagster_client, "execute_query"):
+             res = dagster_client.execute_query(mutation, variables)
+        else:
+             res = dagster_client._execute(mutation, variables)
+             
+        print(f"Partition added response: {res}")
+        
+        # Check for GraphQL errors
+        if res.get("errors"):
+            raise Exception(str(res.get("errors")))
+            
+        # Check for functional errors (PythonError)
+        data = res.get("addDynamicPartition", {})
+        if data.get("__typename") == "PythonError":
+            raise Exception(f"Dagster error: {data.get('message')}")
+        
+    except Exception as e:
+        print(f"Error adding partition: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to register output partition: {str(e)}")
+
+    # 3. Trigger Dagster Job
+    # We use tags to specify the partition for the asset job
+    dagster_client.submit_job_execution(
+        "render_asset_job", 
+        run_config={
+            "ops": {
+                "rendered_course_file": {
+                    "config": {"project_id": request.project_id}
+                }
+            }
+        },
+        tags={"dagster/partition": filename}
+    )
+    
+    return {"status": "queued", "message": f"Render job submitted for {filename}"}
 
 if __name__ == "__main__":
     import uvicorn

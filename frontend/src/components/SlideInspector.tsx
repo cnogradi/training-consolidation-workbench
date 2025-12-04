@@ -18,6 +18,7 @@ export const SlideInspector: React.FC = () => {
     const [slide, setSlide] = useState<SourceSlide | null>(null);
     const [loading, setLoading] = useState(false);
     const [rendering, setRendering] = useState(false);
+    const [renderFormat, setRenderFormat] = useState<"pptx" | "typ">("pptx");
 
     // Refs for scrolling
     const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -47,8 +48,8 @@ export const SlideInspector: React.FC = () => {
         if (!projectId) return;
         setRendering(true);
         try {
-            await api.triggerRender(projectId);
-            alert("Render job started in background!");
+            await api.triggerRender(projectId, renderFormat);
+            alert(`Render job (${renderFormat}) started in background!`);
         } catch (e) {
             console.error(e);
             alert("Failed to trigger render.");
@@ -116,20 +117,30 @@ export const SlideInspector: React.FC = () => {
                     <div className="text-[10px] text-slate-400">
                         {synthesizedNodes.length} sections ready
                     </div>
-                    <button
-                        onClick={handleRender}
-                        disabled={rendering}
-                        className="bg-teal-600 text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                        {rendering ? (
-                            <span className="animate-pulse">Starting Job...</span>
-                        ) : (
-                            <>
-                                <Download size={14} />
-                                Render to File
-                            </>
-                        )}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <select 
+                            value={renderFormat} 
+                            onChange={(e) => setRenderFormat(e.target.value as "pptx" | "typ")}
+                            className="text-xs border border-slate-300 rounded px-2 py-1 bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        >
+                            <option value="pptx">PPTX</option>
+                            <option value="typ">Typst Source</option>
+                        </select>
+                        <button
+                            onClick={handleRender}
+                            disabled={rendering}
+                            className="bg-teal-600 text-white text-xs font-medium px-4 py-2 rounded-md shadow-sm hover:bg-teal-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            {rendering ? (
+                                <span className="animate-pulse">Starting Job...</span>
+                            ) : (
+                                <>
+                                    <Download size={14} />
+                                    Render to File
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         );

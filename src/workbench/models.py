@@ -80,6 +80,7 @@ class SkeletonRequest(BaseModel):
 
 class RenderRequest(BaseModel):
     project_id: str
+    format: str = "pptx" # "pptx" or "typ"
 
 class ProjectTreeResponse(BaseModel):
     """Full project tree structure with all nodes"""

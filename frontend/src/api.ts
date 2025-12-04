@@ -122,8 +122,8 @@ export const api = {
         });
         return res.data;
     },
-    triggerRender: async (projectId: string) => {
-        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId });
+    triggerRender: async (projectId: string, format: string = "pptx") => {
+        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId, format });
         return res.data;
     },
     getConceptHeatmap: async (term: string) => {
