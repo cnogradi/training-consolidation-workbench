@@ -247,38 +247,50 @@ class GeneratorService:
     
     def _fetch_source_outlines(self, source_ids: List[str]) -> tuple:
         """
-        Fetch outlines and FORMAT concepts with importance tags.
+        Fetch outlines with HIERARCHY preserved (section levels).
         Returns: (outlines, course_ids, all_known_concepts_set)
+        
+        The outlines are structured hierarchically for the LLM to understand parent-child relationships.
         """
         query = """
         UNWIND $source_ids as sid
         MATCH (n) WHERE n.id = sid
         
-        // Expand Course into Sections
-        OPTIONAL MATCH (n)-[:HAS_SECTION*]->(child:Section)
-        WITH n, CASE WHEN size(collect(child)) > 0 THEN collect(child) ELSE [n] END as targets
-        UNWIND targets as target
+        // Expand Course into Sections (with variable length path to get levels)
+        OPTIONAL MATCH path = (n)-[:HAS_SECTION*]->(child:Section)
+        WITH n, child, 
+             CASE WHEN child IS NOT NULL THEN length(path) - 1 ELSE 0 END as level
+        WITH n, CASE WHEN child IS NOT NULL THEN child ELSE n END as target, level
         
         // Determine Context
         OPTIONAL MATCH (target)<-[:HAS_SECTION*]-(c:Course)
-        WITH n, target, 
+        WITH n, target, level,
              coalesce(c.business_unit, target.business_unit, n.business_unit, 'Unknown') as bu, 
              coalesce(c.id, n.id) as course_id
         
+        // Get parent section ID for hierarchy
+        OPTIONAL MATCH (parent:Section)-[:HAS_SECTION]->(target)
+        WITH n, target, level, bu, course_id, parent.id as parent_section_id
+        
         // Get Concepts WITH MAX SCORE (Aggregation)
         OPTIONAL MATCH (target)-[:HAS_SLIDE]->(slide:Slide)-[t:TEACHES]->(con:Concept)
-        // We take the MAX salience of a concept across all slides in this section
-        WITH target, bu, course_id, con.name as c_name, max(coalesce(t.salience, 0)) as max_score
+        WITH target, level, bu, course_id, parent_section_id, 
+             con.name as c_name, max(coalesce(t.salience, 0)) as max_score
         WHERE c_name IS NOT NULL
         
-        RETURN target.title as section_title,
-                bu,
-                course_id,
-                collect({name: c_name, score: max_score}) as concepts
-        ORDER BY bu, course_id
+        RETURN target.id as section_id,
+               target.title as section_title,
+               level,
+               parent_section_id,
+               bu,
+               course_id,
+               collect({name: c_name, score: max_score}) as concepts
+        ORDER BY bu, course_id, level, section_id
         """
         results = self.neo4j_client.execute_query(query, {"source_ids": source_ids})
         
+        # Build hierarchical structure
+        sections_by_id = {}
         outlines = []
         all_known_concepts = set()
         course_ids = set()
@@ -290,14 +302,11 @@ class GeneratorService:
             
             # Format Concepts: "Name (Primary)"
             formatted_concepts = []
-            
-            # Sort by score descending
             sorted_concepts = sorted(r['concepts'], key=lambda x: x['score'], reverse=True)
             
-            for c in sorted_concepts[:15]: # Limit to top 15 per section
+            for c in sorted_concepts[:15]:
                 all_known_concepts.add(c['name'])
                 
-                # Semantic Bucketing
                 if c['score'] >= 0.8:
                     tag = "(Primary)"
                 elif c['score'] >= 0.5:
@@ -307,11 +316,30 @@ class GeneratorService:
                 
                 formatted_concepts.append(f"{c['name']} {tag}")
 
-            outlines.append({
+            section_data = {
+                'id': r['section_id'],
                 'bu': r['bu'],
                 'section_title': r['section_title'],
-                'concepts': formatted_concepts
-            })
+                'level': r['level'],
+                'parent_id': r['parent_section_id'],
+                'concepts': formatted_concepts,
+                'subsections': []  # Will be populated below
+            }
+            
+            sections_by_id[r['section_id']] = section_data
+        
+        # Build hierarchy: attach subsections to their parents
+        for section_id, section in sections_by_id.items():
+            parent_id = section.get('parent_id')
+            if parent_id and parent_id in sections_by_id:
+                sections_by_id[parent_id]['subsections'].append(section)
+            elif section['level'] == 0:
+                # Top-level section
+                outlines.append(section)
+        
+        # If no hierarchy was detected (level always 0), just use flat list
+        if not outlines:
+            outlines = list(sections_by_id.values())
         
         return outlines, list(course_ids), all_known_concepts
     
@@ -375,7 +403,7 @@ class GeneratorService:
         return list(unique_slides.values())[:6]
     
     def _persist_project(self, sections: List[Dict], title: str = "New Curriculum") -> str:
-        """Create Project and TargetNode entries in Neo4j"""
+        """Create Project and TargetNode entries in Neo4j with hierarchy support"""
         project_id = str(uuid.uuid4())
         
         # Create Project node with title
@@ -392,13 +420,22 @@ class GeneratorService:
         )
         
         # Create TargetNode entries
+        # First pass: create all nodes and build ID mapping
+        target_ids = []
         for i, section in enumerate(sections):
             target_id = f"{project_id}_target_{i}"
+            target_ids.append(target_id)
             
-            # Create TargetNode
+            level = section.get('level', 0)
+            parent_idx = section.get('parent_idx')
+            
+            # Determine parent node ID
+            parent_node_id = project_id if parent_idx is None else target_ids[parent_idx]
+            
+            # Create TargetNode linked to parent (Project or another TargetNode)
             self.neo4j_client.execute_query(
                 """
-                MATCH (p:Project {id: $project_id})
+                MATCH (parent {id: $parent_id})
                 CREATE (t:TargetNode {
                     id: $target_id,
                     title: $title,
@@ -406,19 +443,21 @@ class GeneratorService:
                     key_concepts: $key_concepts,
                     status: 'suggestion',
                     order: $order,
+                    level: $level,
                     is_unassigned: $is_unassigned,
                     is_placeholder: $is_placeholder,
                     section_type: $section_type
                 })
-                CREATE (p)-[:HAS_CHILD]->(t)
+                CREATE (parent)-[:HAS_CHILD]->(t)
                 """,
                 {
-                    "project_id": project_id,
+                    "parent_id": parent_node_id,
                     "target_id": target_id,
                     "title": section['title'],
-                    "rationale": section['rationale'],
+                    "rationale": section.get('rationale', ''),
                     "key_concepts": section.get('key_concepts', []),
                     "order": i,
+                    "level": level,
                     "is_unassigned": section.get('is_unassigned', False),
                     "is_placeholder": section.get('is_placeholder', False),
                     "section_type": section.get('type', 'technical')

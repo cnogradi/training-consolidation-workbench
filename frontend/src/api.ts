@@ -30,6 +30,7 @@ export interface TargetDraftNode {
     suggested_source_ids?: string[];
     rationale?: string;
     order?: number;
+    level?: number; // Hierarchy level: 0 = top-level, 1+ = subsections
 }
 
 export interface CourseNode {

@@ -49,20 +49,26 @@ def build_dynamic_prompt(template_modules: List[Dict]) -> str:
         numbered_list.append(f"{i+1}. {display_name}")
         
         if is_list:
-            json_structure_lines.append(f'  "{key}": [{{"title": "...", "rationale": "...", "key_concepts": [...]}}],  // MUST be an ARRAY of objects')
+            # List modules can have subsections
+            json_structure_lines.append(f'  "{key}": [  // ARRAY of module objects')
+            json_structure_lines.append(f'    {{"title": "...", "rationale": "...", "key_concepts": [...], "subsections": [')
+            json_structure_lines.append(f'      {{"title": "...", "rationale": "...", "key_concepts": [...]}}')
+            json_structure_lines.append(f'    ]}}')
+            json_structure_lines.append(f'  ],')
         else:
-            json_structure_lines.append(f'  "{key}": {{"title": "...", "rationale": "...", "key_concepts": [...]}},  // MUST be a SINGLE object')
+            json_structure_lines.append(f'  "{key}": {{"title": "...", "rationale": "...", "key_concepts": [...]}},  // SINGLE object')
     
     # Remove trailing comma from last line
     if json_structure_lines:
-        json_structure_lines[-1] = json_structure_lines[-1].rstrip(',  // MUST be a SINGLE object').rstrip(',  // MUST be an ARRAY of objects')
-        if ' // MUST be a SINGLE object' in json_structure_lines[-1]:
-            json_structure_lines[-1] += '  // MUST be a SINGLE object'
-        else:
-            json_structure_lines[-1] += '  // MUST be an ARRAY of objects'
+        last_line = json_structure_lines[-1]
+        if last_line.endswith(','):
+            json_structure_lines[-1] = last_line.rstrip(',')
     
     prompt = f"""You are an expert Instructional Designer for Engineering.
 Given outlines from multiple business units, create a Unified Standard Course.
+
+The source outlines may include HIERARCHICAL sections (modules with subsections).
+Preserve this hierarchy in your output where appropriate.
 
 You MUST follow this template:
 {chr(10).join(numbered_list)}
@@ -75,14 +81,17 @@ Output as JSON matching this EXACT structure:
 CRITICAL INSTRUCTIONS:
 1. You MUST include ALL keys shown above in your JSON response - do not omit any!
 2. For keys marked "SINGLE object", provide exactly ONE object (not an array).
-3. For keys marked "ARRAY of objects", provide a JSON array with multiple objects.
+3. For keys marked "ARRAY of module objects", provide a JSON array.
 4. Each object must have: title (string), rationale (string), key_concepts (array of strings).
-5. If source material does NOT contain relevant concepts for a module:
+5. For ARRAY modules (like technical_modules), you MAY include a "subsections" array to group related topics.
+   - Subsections are OPTIONAL but encouraged for complex topics.
+   - Each subsection has the same structure: title, rationale, key_concepts.
+6. If source material does NOT contain relevant concepts for a module:
    - Still include that key in your JSON output
    - Set key_concepts to an EMPTY array []
    - Set rationale to exactly "NO_SOURCE_DATA"
-6. DO NOT invent concepts - only use concepts from the source material provided.
-7. For array fields like technical_modules, create MULTIPLE modules organized logically (Fundamentals -> Advanced).
+7. DO NOT invent concepts - only use concepts from the source material provided.
+8. For array fields, create MULTIPLE modules organized logically (Fundamentals -> Advanced).
 """
     
     return prompt
@@ -177,7 +186,25 @@ class OutlineHarmonizer(dspy.Module):
             print(f"[DEBUG] Expected keys: {[m['key'] for m in self.template_modules]}")
             
             # 4. Flatten to List using YAML config order
+            # Each item gets a 'level' field (0 = top-level, 1+ = subsections)
             final_tree = []
+            
+            def flatten_with_hierarchy(items: List, module_type: str, level: int = 0, parent_idx: int = None):
+                """Recursively flatten items with subsections into flat list with level info"""
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    
+                    current_idx = len(final_tree)
+                    item['type'] = module_type
+                    item['level'] = level
+                    item['parent_idx'] = parent_idx  # For linking later
+                    final_tree.append(item)
+                    
+                    # Process subsections if present
+                    subsections = item.pop('subsections', [])
+                    if subsections and isinstance(subsections, list):
+                        flatten_with_hierarchy(subsections, module_type, level + 1, current_idx)
             
             for module_config in self.template_modules:
                 key = module_config['key']
@@ -194,10 +221,7 @@ class OutlineHarmonizer(dspy.Module):
                             data = [data]
                         
                         if isinstance(data, list):
-                            for item in data:
-                                if isinstance(item, dict):
-                                    item['type'] = module_type
-                                    final_tree.append(item)
+                            flatten_with_hierarchy(data, module_type, level=0)
                     else:
                         # Expecting single dict
                         if isinstance(data, list):
@@ -210,6 +234,8 @@ class OutlineHarmonizer(dspy.Module):
                         
                         if isinstance(data, dict):
                             data['type'] = module_type
+                            data['level'] = 0
+                            data['parent_idx'] = None
                             final_tree.append(data)
                         else:
                             print(f"[WARN] Unexpected type for key '{key}': {type(data)}")

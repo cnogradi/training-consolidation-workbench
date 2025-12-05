@@ -31,6 +31,7 @@ class TargetDraftNode(BaseModel):
     rationale: Optional[str] = None  # AI-generated rationale for this section
     suggested_source_ids: List[str] = []  # Slide IDs suggested by AI
     order: Optional[int] = 0 # Display order
+    level: Optional[int] = 0 # Hierarchy level: 0 = top-level, 1+ = subsection
 
 
 class SynthesisRequest(BaseModel):

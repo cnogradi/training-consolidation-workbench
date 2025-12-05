@@ -45,24 +45,54 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
         }
     }, [projectId, discipline, refreshTrigger, setProjectId, fetchStructure]);
 
-    // Group nodes by section type
-    const childNodes = useMemo(() => {
-        return structure.filter(n => n.parent_id === projectId);
+    // Get all project nodes (excluding the project root itself)
+    const allProjectNodes = useMemo(() => {
+        return structure.filter(n => n.id !== projectId);
     }, [structure, projectId]);
+
+    // Build a map of parent -> children for hierarchy
+    const childrenByParent = useMemo(() => {
+        const map = new Map<string, typeof allProjectNodes>();
+        for (const node of allProjectNodes) {
+            const parentId = node.parent_id || '';
+            if (!map.has(parentId)) {
+                map.set(parentId, []);
+            }
+            map.get(parentId)!.push(node);
+        }
+        return map;
+    }, [allProjectNodes]);
+
+    // Get top-level nodes (direct children of project)
+    const topLevelNodes = useMemo(() => {
+        return childrenByParent.get(projectId || '') || [];
+    }, [childrenByParent, projectId]);
 
     const groupedNodes = useMemo(() => {
         // Define order of section types
         const sectionOrder = ['introduction', 'mandatory_safety', 'technical', 'mandatory_assessment'];
 
-        // Group nodes by section_type
-        const groups: Record<string, typeof childNodes> = {};
+        // Helper to collect node and all its descendants in order
+        const collectWithDescendants = (node: typeof topLevelNodes[0], collected: typeof topLevelNodes) => {
+            collected.push(node);
+            const children = childrenByParent.get(node.id) || [];
+            // Sort children by order
+            children.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+            for (const child of children) {
+                collectWithDescendants(child, collected);
+            }
+        };
 
-        for (const node of childNodes) {
+        // Group nodes by section_type (top-level determines section type for group)
+        const groups: Record<string, typeof topLevelNodes> = {};
+
+        for (const node of topLevelNodes) {
             const type = node.section_type || 'technical';
             if (!groups[type]) {
                 groups[type] = [];
             }
-            groups[type].push(node);
+            // Collect the top-level node and all its descendants
+            collectWithDescendants(node, groups[type]);
         }
 
         // Return ordered array of groups
@@ -73,7 +103,7 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
                 config: SECTION_CONFIG[type] || SECTION_CONFIG['technical'],
                 nodes: groups[type]
             }));
-    }, [childNodes]);
+    }, [topLevelNodes, childrenByParent]);
 
     return (
         <div className="flex-1 bg-slate-50 p-6 flex flex-col h-full overflow-y-auto custom-scrollbar">
@@ -117,18 +147,36 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
                                 </span>
                             </div>
 
-                            {/* Nodes in this section */}
-                            <div className="space-y-4 pl-4 border-l-2 border-slate-200">
-                                {group.nodes.map(node => (
-                                    <SynthBlock key={node.id} node={node} onRefresh={fetchStructure} />
-                                ))}
+                            {/* Nodes in this section - with hierarchy indentation */}
+                            <div className="space-y-3 pl-4 border-l-2 border-slate-200">
+                                {group.nodes.map(node => {
+                                    const level = node.level ?? 0;
+                                    const indentClass = level > 0 ? `ml-${Math.min(level * 6, 12)}` : '';
+                                    const scaleClass = level > 0 ? 'scale-[0.97] origin-left' : '';
+
+                                    return (
+                                        <div
+                                            key={node.id}
+                                            className={`${indentClass} ${scaleClass} transition-all`}
+                                            style={{ marginLeft: level > 0 ? `${level * 1.5}rem` : 0 }}
+                                        >
+                                            {level > 0 && (
+                                                <div className="flex items-center gap-2 mb-1 text-xs text-slate-400">
+                                                    <span className="w-4 h-px bg-slate-300" />
+                                                    <span>Subsection</span>
+                                                </div>
+                                            )}
+                                            <SynthBlock key={node.id} node={node} onRefresh={fetchStructure} />
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     );
                 })}
 
                 {/* Empty State / Placeholder */}
-                {childNodes.length === 0 && (
+                {topLevelNodes.length === 0 && (
                     <div className="border-2 border-dashed border-slate-200 rounded-xl p-12 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50">
                         <GitMerge size={48} className="mb-4 opacity-20" />
                         <p className="font-medium">Ready to Consolidate</p>
