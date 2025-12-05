@@ -102,3 +102,11 @@ class MinioClient:
         except S3Error as exc:
             print("error occurred.", exc)
             raise
+
+    def get_object(self, bucket_name: str, object_name: str):
+        """Get an object from the bucket."""
+        try:
+            return self.client.get_object(bucket_name=bucket_name, object_name=object_name)
+        except S3Error as exc:
+            print("error occurred.", exc)
+            raise

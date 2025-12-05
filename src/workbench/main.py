@@ -300,17 +300,33 @@ def get_embedded_images_for_slides(slide_ids: List[str]):
     Given a list of slide IDs, returns all embedded images from the source courses.
     Slide ID format is {course_id}_p{page_num}.
     """
-    # Extract unique course IDs from slide IDs
-    course_ids = set()
+    # Extract course IDs and map them to set of page numbers
+    # Structure: { "course_id": {1, 2, 5} }
+    course_pages = {}
     for slide_id in slide_ids:
         parts = slide_id.rsplit("_p", 1)
         if len(parts) == 2:
-            course_ids.add(parts[0])
+            c_id = parts[0]
+            try:
+                p_num = int(parts[1])
+                if c_id not in course_pages:
+                    course_pages[c_id] = set()
+                course_pages[c_id].add(p_num)
+            except ValueError:
+                continue
     
     all_images = []
-    for course_id in course_ids:
+    for course_id, pages in course_pages.items():
         result = get_embedded_images(course_id)
-        all_images.extend(result.get("images", []))
+        course_images = result.get("images", [])
+        
+        # Filter by page number
+        # If page_number is missing in image metadata, we might include it or exclude it.
+        # Safest is to exclude unless we are sure.
+        for img in course_images:
+            img_page = img.get("page_number")
+            if img_page is not None and img_page in pages:
+                all_images.append(img)
     
     return {"images": all_images}
 
