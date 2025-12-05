@@ -150,6 +150,11 @@ class ContentSynthesizer(dspy.Module):
         
         # Clean up extra whitespace
         markdown = markdown.strip()
+
+        # Fix literal newline characters that were escaped by the LLM
+        # Sometimes LLMs output literal "\n" strings instead of actual newlines in JSON
+        # This handles both single \n and double \n\n (paragraph breaks)
+        markdown = markdown.replace('\\n', '\n')
         
         # We return a dict that the Frontend can easily render
         return {
