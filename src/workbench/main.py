@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Depends
+from src.auth.security import get_current_user
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
 import os
@@ -836,7 +837,6 @@ def get_synthesis_status(run_id: str):
         return {"run_id": run_id, "status": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/synthesis/preview/{node_id}")
 def get_synthesis_preview(node_id: str):
     """

@@ -3,7 +3,7 @@ import weaviate
 
 class WeaviateClient:
     def __init__(self, url=None):
-        self.url = url or os.getenv("WEAVIATE_URL", "http://localhost:8080")
+        self.url = url or os.getenv("WEAVIATE_URL", "http://localhost:8081")
         
         self.client = weaviate.Client(
             url=self.url,

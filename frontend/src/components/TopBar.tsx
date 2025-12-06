@@ -1,6 +1,9 @@
 import React from 'react';
 import { Settings, Code, Activity, Globe, Cpu } from 'lucide-react';
 import clsx from 'clsx';
+import { LoginButton } from './LoginButton';
+import { LogoutButton } from './LogoutButton';
+import { useAuth } from 'react-oidc-context';
 
 interface TopBarProps {
     discipline: string;
@@ -8,6 +11,9 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => {
+    const auth = useAuth();
+    const userDisplay = auth.user?.profile.preferred_username || auth.user?.profile.email || "Guest";
+
     const disciplines = [
         { id: 'Mechanical', label: 'ME', icon: Settings },
         { id: 'Electrical', label: 'EE', icon: Activity }, // Using Activity for waves/signals
@@ -23,7 +29,7 @@ export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => 
                 </div>
                 <div>
                     <h1 className="font-bold text-sm leading-tight">Training Consolidation Workbench</h1>
-                    <p className="text-xs text-slate-400">Project: Global Standardization • User: Domain Expert</p>
+                    <p className="text-xs text-slate-400">Project: Global Standardization • User: {userDisplay}</p>
                 </div>
             </div>
 
@@ -35,8 +41,8 @@ export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => 
                         onClick={() => setDiscipline(d.id)}
                         className={clsx(
                             "flex items-center gap-2 px-3 py-1 rounded-md text-sm transition-all",
-                            discipline === d.id 
-                                ? "bg-brand-teal text-white shadow-sm font-medium" 
+                            discipline === d.id
+                                ? "bg-brand-teal text-white shadow-sm font-medium"
                                 : "text-slate-400 hover:text-slate-200"
                         )}
                     >
@@ -47,6 +53,13 @@ export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => 
             </div>
 
             <div className="flex items-center gap-4 text-slate-400">
+                {auth.user && (
+                    <span className="text-xs text-slate-500 font-mono hidden xl:block">
+                        ID: {auth.user.profile.sub?.substring(0, 8)}...
+                    </span>
+                )}
+                <LoginButton />
+                <LogoutButton />
                 <Settings size={18} className="cursor-pointer hover:text-white" />
             </div>
         </div>

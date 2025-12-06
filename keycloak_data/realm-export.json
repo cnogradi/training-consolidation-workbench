@@ -1,0 +1,55 @@
+{
+    "realm": "workbench",
+    "enabled": true,
+    "users": [
+        {
+            "username": "user",
+            "enabled": true,
+            "email": "user@example.com",
+            "firstName": "Demo",
+            "lastName": "User",
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "password",
+                    "temporary": false
+                }
+            ],
+            "realmRoles": [
+                "user"
+            ],
+            "clientRoles": {
+                "workbench-app": [
+                    "user"
+                ]
+            }
+        }
+    ],
+    "clients": [
+        {
+            "clientId": "workbench-app",
+            "enabled": true,
+            "publicClient": true,
+            "directAccessGrantsEnabled": true,
+            "redirectUris": [
+                "http://localhost:5173/*",
+                "http://localhost:8000/*"
+            ],
+            "webOrigins": [
+                "*"
+            ]
+        }
+    ],
+    "roles": {
+        "realm": [
+            {
+                "name": "user",
+                "description": "User role"
+            },
+            {
+                "name": "admin",
+                "description": "Admin role"
+            }
+        ]
+    }
+}

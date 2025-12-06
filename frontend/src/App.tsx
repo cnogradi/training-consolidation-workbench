@@ -9,6 +9,8 @@ import { StagingArea } from './components/StagingArea';
 import { useAppStore } from './store';
 import type { SourceSlide } from './api';
 import { useEffect, useState } from 'react';
+import { AuthProvider } from './auth/AuthProvider';
+import { RequireAuth } from './auth/RequireAuth';
 
 function App() {
   const { discipline, setDiscipline, projectId, setProjectId, createProjectIfNeeded, mapSlideToNode, stagingMode } = useAppStore();
@@ -86,58 +88,62 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col">
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        collisionDetection={pointerWithin}
-      >
-        {/* Top Bar */}
-        <TopBar discipline={discipline} setDiscipline={setDiscipline} />
+      <AuthProvider>
+        <RequireAuth>
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            collisionDetection={pointerWithin}
+          >
+            {/* Top Bar */}
+            <TopBar discipline={discipline} setDiscipline={setDiscipline} />
 
-        {/* Main Content Area - Three Resizable Panes */}
-        <div className="flex-1 overflow-hidden">
-          <PanelGroup direction="horizontal">
+            {/* Main Content Area - Three Resizable Panes */}
+            <div className="flex-1 overflow-hidden">
+              <PanelGroup direction="horizontal">
 
-            {/* Left Pane: Source Browser (20%) */}
-            <Panel defaultSize={20} minSize={15} className="bg-white border-r border-slate-200 relative">
-              <SourceBrowser discipline={discipline} />
-            </Panel>
+                {/* Left Pane: Source Browser (20%) */}
+                <Panel defaultSize={20} minSize={15} className="bg-white border-r border-slate-200 relative">
+                  <SourceBrowser discipline={discipline} />
+                </Panel>
 
-            <PanelResizeHandle className="w-1 bg-slate-200 hover:bg-brand-teal transition-colors cursor-col-resize" />
+                <PanelResizeHandle className="w-1 bg-slate-200 hover:bg-brand-teal transition-colors cursor-col-resize" />
 
-            {/* Center Pane: Staging Area or Consolidation Canvas (50%) */}
-            <Panel defaultSize={50} minSize={30} className="bg-slate-50">
-              {stagingMode ? (
-                <StagingArea />
-              ) : (
-                <ConsolidationCanvas
-                  projectId={projectId}
-                  setProjectId={setProjectId}
-                  discipline={discipline}
-                />
-              )}
-            </Panel>
+                {/* Center Pane: Staging Area or Consolidation Canvas (50%) */}
+                <Panel defaultSize={50} minSize={30} className="bg-slate-50">
+                  {stagingMode ? (
+                    <StagingArea />
+                  ) : (
+                    <ConsolidationCanvas
+                      projectId={projectId}
+                      setProjectId={setProjectId}
+                      discipline={discipline}
+                    />
+                  )}
+                </Panel>
 
-            <PanelResizeHandle className="w-1 bg-slate-200 hover:bg-brand-teal transition-colors cursor-col-resize" />
+                <PanelResizeHandle className="w-1 bg-slate-200 hover:bg-brand-teal transition-colors cursor-col-resize" />
 
-            {/* Right Pane: Preview & Synthesis (30%) */}
-            <Panel defaultSize={30} minSize={20} className="bg-white border-l border-slate-200">
-              <SlideInspector />
-            </Panel>
+                {/* Right Pane: Preview & Synthesis (30%) */}
+                <Panel defaultSize={30} minSize={20} className="bg-white border-l border-slate-200">
+                  <SlideInspector />
+                </Panel>
 
-          </PanelGroup>
-        </div>
-
-        <DragOverlay>
-          {activeDragSlide ? (
-            <div className="w-64 bg-white p-2 rounded shadow-xl border border-brand-teal opacity-90 rotate-3 cursor-grabbing pointer-events-none">
-              <div className="font-bold text-xs mb-1">Adding Slide...</div>
-              <div className="text-xs text-slate-600 truncate">{activeDragSlide.id}</div>
+              </PanelGroup>
             </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+
+            <DragOverlay>
+              {activeDragSlide ? (
+                <div className="w-64 bg-white p-2 rounded shadow-xl border border-brand-teal opacity-90 rotate-3 cursor-grabbing pointer-events-none">
+                  <div className="font-bold text-xs mb-1">Adding Slide...</div>
+                  <div className="text-xs text-slate-600 truncate">{activeDragSlide.id}</div>
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        </RequireAuth>
+      </AuthProvider>
     </div>
   );
 }
