@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Code, Activity, Globe, Cpu } from 'lucide-react';
+import { Settings, Code, Activity, Globe, Cpu, User } from 'lucide-react';
 import clsx from 'clsx';
 import { LoginButton } from './LoginButton';
 import { LogoutButton } from './LogoutButton';
@@ -12,7 +12,7 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => {
     const auth = useAuth();
-    const userDisplay = auth.user?.profile.preferred_username || auth.user?.profile.email || "Guest";
+    // const userDisplay = auth.user?.profile.preferred_username || auth.user?.profile.email || "Guest";
 
     const disciplines = [
         { id: 'Mechanical', label: 'ME', icon: Settings },
@@ -29,7 +29,7 @@ export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => 
                 </div>
                 <div>
                     <h1 className="font-bold text-sm leading-tight">Training Consolidation Workbench</h1>
-                    <p className="text-xs text-slate-400">Project: Global Standardization • User: {userDisplay}</p>
+                    <p className="text-xs text-slate-400">Project: Global Standardization</p>
                 </div>
             </div>
 
@@ -54,9 +54,14 @@ export const TopBar: React.FC<TopBarProps> = ({ discipline, setDiscipline }) => 
 
             <div className="flex items-center gap-4 text-slate-400">
                 {auth.user && (
-                    <span className="text-xs text-slate-500 font-mono hidden xl:block">
-                        ID: {auth.user.profile.sub?.substring(0, 8)}...
-                    </span>
+                    <div className="flex items-center gap-3 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 hover:border-slate-600 transition-colors shadow-sm">
+                        <div className="bg-brand-teal p-1 rounded-full text-white shadow-sm">
+                            <User size={14} strokeWidth={2.5} />
+                        </div>
+                        <span className="text-sm text-white font-medium pr-1 tracking-wide">
+                            {auth.user.profile.preferred_username || auth.user.profile.name || auth.user.profile.email?.split('@')[0] || "User"}
+                        </span>
+                    </div>
                 )}
                 <LoginButton />
                 <LogoutButton />
