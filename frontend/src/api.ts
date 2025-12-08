@@ -54,12 +54,18 @@ axios.interceptors.request.use(config => {
     const authority = import.meta.env.VITE_KEYCLOAK_REALM_URL || "http://localhost:8080/realms/workbench";
     const clientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "workbench-app";
 
-    const oidcStorage = sessionStorage.getItem(`oidc.user:${authority}:${clientId}`);
+    const storageKey = `oidc.user:${authority}:${clientId}`;
+    const oidcStorage = sessionStorage.getItem(storageKey);
     if (oidcStorage) {
         const user = JSON.parse(oidcStorage);
         if (user && user.access_token) {
             config.headers.Authorization = `Bearer ${user.access_token}`;
+        } else {
+            console.warn("[API] Found user storage but no access_token");
         }
+    } else {
+        console.warn(`[API] No OIDC storage found for key: ${storageKey}`);
+        console.log("[API] Available keys:", Object.keys(sessionStorage));
     }
     return config;
 }, error => {

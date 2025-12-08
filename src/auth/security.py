@@ -29,8 +29,14 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         # 1. Validate Token via JWKS
         jwks_url = f"{KEYCLOAK_URL}/protocol/openid-connect/certs"
         jwks_client = PyJWKClient(jwks_url)
+        print(f"DEBUG: Validating token against JWKS: {jwks_url}")
+        
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         
+        # DEBUG: Print token headers
+        unverified_header = jwt.get_unverified_header(token)
+        print(f"DEBUG: Token Header: {unverified_header}")
+
         payload = jwt.decode(
             token,
             signing_key.key,
@@ -38,6 +44,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
             audience="account", # Default audience for Keycloak, adjust if needed
             options={"verify_aud": False} # Relax audience check for now if client ID varies
         )
+        print(f"DEBUG: Token decoded successfully. User: {payload.get('sub')}")
         
         user_id = payload.get("sub")
         email = payload.get("email")
@@ -45,6 +52,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         roles = realm_access.get("roles", [])
         
         if not user_id or not email:
+            print("DEBUG: Missing user_id or email in payload")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
@@ -59,19 +67,23 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
         return user
         
     except jwt.ExpiredSignatureError:
+        print("DEBUG: Token Expired")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.PyJWTError as e:
+        print(f"DEBUG: PyJWT Validation Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Could not validate credentials: {e}",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception as e:
-        print(f"Auth Error: {e}")
+        print(f"Auth Error (General): {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",
