@@ -25,7 +25,9 @@ dependencies = [
     "dspy-ai",
     "fastapi",
     "uvicorn",
-    "dagster-graphql"
+    "dagster-graphql",
+    "PyJWT[crypto]",
+    "python-multipart"
 ]
 
 [build-system]

@@ -49,6 +49,29 @@ export interface CourseSection {
     concepts: string[];
 }
 
+// Add interceptor to attach Bearer token
+axios.interceptors.request.use(config => {
+    const authority = import.meta.env.VITE_KEYCLOAK_REALM_URL || "http://localhost:8080/realms/workbench";
+    const clientId = import.meta.env.VITE_KEYCLOAK_CLIENT_ID || "workbench-app";
+
+    const storageKey = `oidc.user:${authority}:${clientId}`;
+    const oidcStorage = sessionStorage.getItem(storageKey);
+    if (oidcStorage) {
+        const user = JSON.parse(oidcStorage);
+        if (user && user.access_token) {
+            config.headers.Authorization = `Bearer ${user.access_token}`;
+        } else {
+            console.warn("[API] Found user storage but no access_token");
+        }
+    } else {
+        console.warn(`[API] No OIDC storage found for key: ${storageKey}`);
+        console.log("[API] Available keys:", Object.keys(sessionStorage));
+    }
+    return config;
+}, error => {
+    return Promise.reject(error);
+});
+
 export const api = {
     getSourceTree: async (discipline?: string) => {
         const params = discipline ? { engineering_discipline: discipline } : {};
@@ -69,6 +92,10 @@ export const api = {
     },
     createDraftProject: async (title: string) => {
         const res = await axios.post<TargetDraftNode>(`${API_URL}/draft/create`, null, { params: { title } });
+        return res.data;
+    },
+    listUserProjects: async () => {
+        const res = await axios.get<TargetDraftNode[]>(`${API_URL}/draft/list`);
         return res.data;
     },
     addDraftNode: async (parentId: string, title: string) => {
