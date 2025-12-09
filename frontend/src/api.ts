@@ -129,8 +129,12 @@ export const api = {
         });
         return res.data;
     },
-    triggerRender: async (projectId: string, format: string = "pptx") => {
-        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId, format });
+    triggerRender: async (projectId: string, format: string = "pptx", templateName: string = "standard") => {
+        const res = await axios.post(`${API_URL}/render/trigger`, { project_id: projectId, format, template_name: templateName });
+        return res.data;
+    },
+    listTemplates: async () => {
+        const res = await axios.get<{ templates: string[] }>(`${API_URL}/render/templates`);
         return res.data;
     },
     getConceptHeatmap: async (term: string) => {

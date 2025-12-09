@@ -1087,6 +1087,34 @@ def reject_suggested_node(node_id: str):
             "action": "deleted"
         }
 
+@app.get("/render/templates")
+def list_templates():
+    """
+    Lists available PPTX templates from MinIO storage (cib-sources/templates).
+    """
+    try:
+        # Assuming buckets are defined in assets or env
+        BUCKET_NAME = "cib-sources" 
+        prefix = "templates/"
+        
+        objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=False)
+        
+        templates = []
+        for obj in objects:
+            if obj.object_name.endswith(".pptx"):
+                # Clean name: remove prefix
+                name = obj.object_name.replace(prefix, "")
+                templates.append(name)
+                
+        # Always include standard
+        if "standard" not in templates:
+            templates.insert(0, "standard")
+            
+        return {"templates": templates}
+    except Exception as e:
+        print(f"Error listing templates: {e}")
+        return {"templates": ["standard"]}
+
 @app.post("/render/trigger")
 def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
     """
@@ -1116,7 +1144,7 @@ def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
         
     filename = f"{safe_title}_{request.project_id[:8]}.{file_extension}"
     
-    print(f"Triggering render for project {request.project_id} -> {filename}")
+    print(f"Triggering render for project {request.project_id} -> {filename} (Template: {request.template_name})")
     
     # 2. Add Dynamic Partition
     try:
@@ -1170,19 +1198,23 @@ def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
 
     # 3. Trigger Dagster Job
     # We use tags to specify the partition for the asset job
+    # And pass RenderConfig run configuration
     dagster_client.submit_job_execution(
         "render_asset_job", 
         run_config={
             "ops": {
                 "rendered_course_file": {
-                    "config": {"project_id": request.project_id}
+                    "config": {
+                        "project_id": request.project_id,
+                        "template_name": request.template_name
+                    }
                 }
             }
         },
-        tags={"dagster/partition": filename}
+        tags={"dagster/partition/published_files": filename}
     )
     
-    return {"status": "queued", "message": f"Render job submitted for {filename}"}
+    return {"status": "triggered", "filename": filename, "job": "render_asset_job"}
 
 if __name__ == "__main__":
     import uvicorn

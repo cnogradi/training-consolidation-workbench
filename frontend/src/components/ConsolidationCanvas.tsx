@@ -25,6 +25,31 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
     const fetchStructure = useAppStore(state => state.fetchStructure);
     const addNode = useAppStore(state => state.addNode);
 
+    const [templates, setTemplates] = React.useState<string[]>(["standard"]);
+    const [selectedTemplate, setSelectedTemplate] = React.useState<string>("standard");
+    const [isExporting, setIsExporting] = React.useState(false);
+
+    useEffect(() => {
+        api.listTemplates().then(data => {
+            setTemplates(data.templates);
+        }).catch(err => console.error("Failed to load templates", err));
+    }, []);
+
+    const handleExport = async () => {
+        if (!projectId) return;
+        setIsExporting(true);
+        try {
+            const res = await api.triggerRender(projectId, "pptx", selectedTemplate);
+            console.log("Export triggered:", res);
+            alert(`Export started for ${res.filename}. Check MinIO or status shortly.`);
+        } catch (error) {
+            console.error("Export failed:", error);
+            alert("Export failed. Check console.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     // Initial Project Creation if needed
     useEffect(() => {
         if (!projectId) {
@@ -112,13 +137,39 @@ export const ConsolidationCanvas: React.FC<ConsolidationCanvasProps> = ({ projec
                     <div className="w-2 h-2 rounded-full bg-brand-teal" />
                     <h2 className="font-bold text-slate-800 text-lg">Consolidated Outline</h2>
                 </div>
-                <button
-                    onClick={() => projectId && addNode(projectId, "New Module")}
-                    className="text-brand-teal hover:bg-brand-teal/10 p-2 rounded-full transition-colors"
-                    title="Add new section"
-                >
-                    <Plus size={20} />
-                </button>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 bg-white rounded-md border border-slate-200 px-2 py-1">
+                        <span className="text-xs text-slate-500 font-medium">Template:</span>
+                        <select
+                            className="bg-transparent text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                        >
+                            {templates.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <button
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                        {isExporting ? (
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                            <BookOpen size={16} />
+                        )}
+                        Export PPTX
+                    </button>
+                    <button
+                        onClick={() => projectId && addNode(projectId, "New Module")}
+                        className="text-brand-teal hover:bg-brand-teal/10 p-2 rounded-full transition-colors"
+                        title="Add new section"
+                    >
+                        <Plus size={20} />
+                    </button>
+                </div>
             </div>
 
             {/* Canvas Area */}
