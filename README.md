@@ -32,6 +32,40 @@ This project supports consolidation of training material from multiple business 
     - **Source Browser**: Visualizes legacy content filtered by Engineering Discipline.
     - **Consolidation Canvas**: A Drag-and-Drop workspace to build the new curriculum.
     - **AI Synthesis**: Generates consolidated text from selected source slides.
+    - **Layout Preservation**: Automatically detects slide layouts (Split, Hero, Grid) and maps them to master slides during export.
+
+## Pipeline Workflow
+
+```mermaid
+graph TD
+    subgraph Ingestion ["Ingestion & Knowledge Graph"]
+        RawDocs[("Raw PDFs/PPTs")] -->|Dagster| Processing[("Unstructured.io & Layout Detector")]
+        Processing -->|Classify| Archetype{Layout Archetype}
+        Archetype -->|Hero, Split, Grid...| Neo4j[(Neo4j Graph)]
+        Processing -->|Vectors| Weaviate[(Weaviate Vector DB)]
+        Processing -->|Images| MinIO[(MinIO Storage)]
+    end
+
+    subgraph Workbench ["Consolidation Workbench"]
+        Neo4j -->|Query| UI[React Frontend]
+        UI -->|Generate| Skeleton[("Outline Harmonizer (DSPy)")]
+        Skeleton -->|Draft| DraftNode[Target Draft Node]
+        DraftNode -->|Synthesize| Synthesis[("Content Synthesizer")]
+        DraftNode -->|Override| LayoutSelect[Layout Selector]
+    end
+
+    subgraph Publishing ["Publishing & Export"]
+        DraftNode -->|Trigger Render| ExportEngine[("PPTX Generator")]
+        LayoutSelect -->|Target Layout| ExportEngine
+        Template[("MinIO Templates")] -->|Fetch| ExportEngine
+        ExportEngine -->|Map & Fill| MasterSlides[("Master Slide Layouts")]
+        MasterSlides -->|Generate| Output[("Final PPTX")]
+    end
+
+    style Ingestion fill:#e3f2fd,stroke:#1565c0
+    style Workbench fill:#f3e5f5,stroke:#7b1fa2
+    style Publishing fill:#e8f5e9,stroke:#2e7d32
+```
 
 ## Generate Outline Feature
 
