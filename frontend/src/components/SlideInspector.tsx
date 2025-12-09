@@ -127,13 +127,25 @@ export const SlideInspector: React.FC = () => {
                         {synthesizedNodes.length} sections ready
                     </div>
                     <div className="flex items-center gap-2">
+                        {/* Template Selector */}
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                            className="bg-slate-50 text-xs border border-slate-300 text-slate-700 font-medium px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-teal-500 max-w-[100px]"
+                            title="Select Template"
+                        >
+                            {templates.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                            ))}
+                        </select>
+
                         <select
                             value={renderFormat}
                             onChange={(e) => setRenderFormat(e.target.value as "pptx" | "typ")}
                             className="text-xs border border-slate-300 rounded px-2 py-1 bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500"
                         >
                             <option value="pptx">PPTX</option>
-                            <option value="typ">Typst Source</option>
+                            <option value="typ">Typst</option>
                         </select>
                         <button
                             onClick={handleRender}
