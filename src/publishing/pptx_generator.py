@@ -226,6 +226,12 @@ def generate_pptx_document(project_title: str, nodes: List[Dict[str, Any]], outp
     """
     if template_path and os.path.exists(template_path):
         prs = Presentation(template_path)
+        # Remove existing slides from template to start fresh
+        # (python-pptx workaround as there is no delete_slide method)
+        xml_slides = prs.slides._sldIdLst
+        slides = list(xml_slides)
+        for slide in slides:
+            xml_slides.remove(slide)
     else:
         prs = Presentation()
     
@@ -384,6 +390,7 @@ def generate_pptx_document(project_title: str, nodes: List[Dict[str, Any]], outp
                     # Valid Manual Fallback Trigger
                     # If we really are 'blank' or failed to find main body
                     if target_layout == 'blank':
+                        pass
             
                 # Parse title (already done)
             
