@@ -19,6 +19,15 @@ export const SlideInspector: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [rendering, setRendering] = useState(false);
     const [renderFormat, setRenderFormat] = useState<"pptx" | "typ">("pptx");
+    const [templates, setTemplates] = useState<string[]>(["standard"]);
+    const [selectedTemplate, setSelectedTemplate] = useState<string>("standard");
+
+    // Fetch templates on mount
+    useEffect(() => {
+        api.listTemplates().then(data => {
+            setTemplates(data.templates);
+        }).catch(err => console.error("Failed to load templates", err));
+    }, []);
 
     // Refs for scrolling
     const nodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -48,8 +57,8 @@ export const SlideInspector: React.FC = () => {
         if (!projectId) return;
         setRendering(true);
         try {
-            await api.triggerRender(projectId, renderFormat);
-            alert(`Render job (${renderFormat}) started in background!`);
+            await api.triggerRender(projectId, renderFormat, selectedTemplate);
+            alert(`Render job (${renderFormat}) using template '${selectedTemplate}' started in background!`);
         } catch (e) {
             console.error(e);
             alert("Failed to trigger render.");
@@ -118,8 +127,8 @@ export const SlideInspector: React.FC = () => {
                         {synthesizedNodes.length} sections ready
                     </div>
                     <div className="flex items-center gap-2">
-                        <select 
-                            value={renderFormat} 
+                        <select
+                            value={renderFormat}
                             onChange={(e) => setRenderFormat(e.target.value as "pptx" | "typ")}
                             className="text-xs border border-slate-300 rounded px-2 py-1 bg-slate-50 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500"
                         >
