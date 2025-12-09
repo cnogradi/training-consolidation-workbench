@@ -224,14 +224,25 @@ def generate_pptx_document(project_title: str, nodes: List[Dict[str, Any]], outp
     Generates a PPTX file from the project structure.
     Places text and images on the same slide using separate non-overlapping boxes.
     """
+    
+    def delete_all_slides(prs):
+        """
+        Robustly deletes all slides from the presentation by removing 
+        both the slide ID entry and the relationship.
+        """
+        # Iterate backwards
+        for i in range(len(prs.slides) - 1, -1, -1):
+            rId = prs.slides._sldIdLst[i].rId
+            prs.part.drop_rel(rId)
+            del prs.slides._sldIdLst[i]
+
     if template_path and os.path.exists(template_path):
         prs = Presentation(template_path)
-        # Remove existing slides from template to start fresh
-        # (python-pptx workaround as there is no delete_slide method)
-        xml_slides = prs.slides._sldIdLst
-        slides = list(xml_slides)
-        for slide in slides:
-            xml_slides.remove(slide)
+        try:
+            delete_all_slides(prs)
+        except Exception as e:
+            print(f"Warning: Failed to clear template slides: {e}")
+            # Continue anyway, better to have duplicates than crash or corruption
     else:
         prs = Presentation()
     
