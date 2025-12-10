@@ -1209,30 +1209,33 @@ def reject_suggested_node(node_id: str):
             "action": "deleted"
         }
 
+
 @app.get("/render/templates")
 def list_templates():
     """
-    Lists available PPTX templates from MinIO storage (cib-sources/templates).
+    Lists available Template Configs from MinIO (cib-sources/templates).
+    Returns list of names (e.g. 'master_engineering') for .yaml files.
     """
     try:
         # Assuming buckets are defined in assets or env
         BUCKET_NAME = "cib-sources" 
         prefix = "templates/"
         
-        objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=False)
+        objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=True)
         
         templates = []
         for obj in objects:
-            if obj.object_name.endswith(".pptx"):
-                # Clean name: remove prefix
-                name = obj.object_name.replace(prefix, "")
+            print(f"DEBUG: Found object {obj.object_name}")
+            if obj.object_name.endswith(".yaml") or obj.object_name.endswith(".yml"):
+                # Clean name: remove prefix and extension
+                name = obj.object_name.replace(prefix, "").rsplit('.', 1)[0]
                 templates.append(name)
                 
         # Always include standard
         if "standard" not in templates:
             templates.insert(0, "standard")
             
-        return {"templates": templates}
+        return {"templates": sorted(templates)}
     except Exception as e:
         print(f"Error listing templates: {e}")
         return {"templates": ["standard"]}
