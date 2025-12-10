@@ -37,6 +37,7 @@ class TargetDraftNode(BaseModel):
     
     order: Optional[int] = 0 # Display order
     level: Optional[int] = 0 # Hierarchy level: 0 = top-level, 1+ = subsection
+    created_at: Optional[Any] = None # Creation timestamp
 
 
 class SynthesisRequest(BaseModel):
