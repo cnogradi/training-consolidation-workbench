@@ -695,18 +695,61 @@ def map_slides_to_node(node_id: str, slide_ids: List[str]):
     """
     Links "Source Slides" to a "Target Node" (Drag & Drop action).
     Now performs a full sync: removes existing links and adds new ones.
+    
+    Includes "Smart Default" logic:
+    - Queries source slides for their 'layout_style'
+    - Calculates the majority layout
+    - Sets 'suggested_layout' and 'target_layout' to the majority
     """
+    # 1. Get layouts of selected slides
+    layout_query = """
+    UNWIND $slide_ids as sid
+    MATCH (s:Slide {id: sid})
+    RETURN s.layout_style as layout
+    """
+    results = neo4j_client.execute_query(layout_query, {"slide_ids": slide_ids})
+    
+    layouts = [row["layout"] for row in results if row.get("layout")]
+    
+    # 2. Determine Majority Layout
+    from collections import Counter
+    if layouts:
+        # Get the most common layout
+        most_common = Counter(layouts).most_common(1)
+        new_layout = most_common[0][0]
+    else:
+        # Fallback if no layouts found or no slides
+        count = len(slide_ids)
+        if count == 0:
+            new_layout = "documentary"
+        elif count == 2:
+            new_layout = "split"
+        elif count >= 3:
+            new_layout = "grid"
+        else:
+            new_layout = "documentary"
+
+    # 3. Update Node & Links
     query = """
     MATCH (t:TargetNode {id: $node_id})
+    
+    // Update layouts
+    SET t.target_layout = $layout,
+        t.suggested_layout = $layout
+    
+    // Clear old links
+    WITH t
     OPTIONAL MATCH (t)-[r:DERIVED_FROM]->(:Slide)
     DELETE r
+    
+    // Create new links
     WITH t
     UNWIND $slide_ids as sid
     MATCH (s:Slide {id: sid})
     MERGE (t)-[:DERIVED_FROM]->(s)
     """
-    neo4j_client.execute_query(query, {"node_id": node_id, "slide_ids": slide_ids})
-    return {"status": "success", "mapped_slides": len(slide_ids)}
+    neo4j_client.execute_query(query, {"node_id": node_id, "slide_ids": slide_ids, "layout": new_layout})
+    return {"status": "success", "mapped_slides": len(slide_ids), "auto_layout": new_layout}
 
 @app.put("/draft/node/content")
 def update_node_content(node_id: str, request: dict = Body(...)):
@@ -727,6 +770,26 @@ def update_node_content(node_id: str, request: dict = Body(...)):
         raise HTTPException(status_code=404, detail="Node not found")
     
     return {"status": "success", "node_id": node_id}
+
+@app.put("/draft/node/layout")
+def update_node_layout(node_id: str, request: dict = Body(...)):
+    """
+    Updates the target_layout property of a TargetNode.
+    Used for selecting specific slide layouts (e.g. split, grid, hero).
+    """
+    target_layout = request.get("target_layout", "documentary")
+    
+    query = """
+    MATCH (t:TargetNode {id: $node_id})
+    SET t.target_layout = $layout
+    RETURN t.id as id
+    """
+    result = neo4j_client.execute_query(query, {"node_id": node_id, "layout": target_layout})
+    
+    if not result:
+        raise HTTPException(status_code=404, detail="Node not found")
+    
+    return {"status": "success", "node_id": node_id, "layout": target_layout}
 
 @app.put("/draft/node/title")
 def update_node_title(node_id: str, request: dict = Body(...)):
@@ -789,6 +852,7 @@ def get_draft_structure(project_id: str):
            n.rationale as rationale, n.order as order, coalesce(n.is_unassigned, false) as is_unassigned,
            coalesce(n.is_placeholder, false) as is_placeholder,
            coalesce(n.section_type, 'technical') as section_type,
+           n.target_layout as target_layout,
            coalesce(n.level, 0) as level,
            parent.id as parent_id, 
            collect(distinct s.id) as source_refs,
@@ -836,6 +900,7 @@ def get_draft_structure(project_id: str):
             is_unassigned=row.get("is_unassigned") or False,
             is_placeholder=row.get("is_placeholder") or False,
             section_type=row.get("section_type", "technical"),
+            target_layout=row.get("target_layout") or "documentary",
             level=row.get("level", 0)
         ))
     return nodes
@@ -1138,6 +1203,34 @@ def reject_suggested_node(node_id: str):
             "action": "deleted"
         }
 
+@app.get("/render/templates")
+def list_templates():
+    """
+    Lists available PPTX templates from MinIO storage (cib-sources/templates).
+    """
+    try:
+        # Assuming buckets are defined in assets or env
+        BUCKET_NAME = "cib-sources" 
+        prefix = "templates/"
+        
+        objects = minio_client.list_objects(BUCKET_NAME, prefix=prefix, recursive=False)
+        
+        templates = []
+        for obj in objects:
+            if obj.object_name.endswith(".pptx"):
+                # Clean name: remove prefix
+                name = obj.object_name.replace(prefix, "")
+                templates.append(name)
+                
+        # Always include standard
+        if "standard" not in templates:
+            templates.insert(0, "standard")
+            
+        return {"templates": templates}
+    except Exception as e:
+        print(f"Error listing templates: {e}")
+        return {"templates": ["standard"]}
+
 @app.post("/render/trigger")
 def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
     """
@@ -1167,7 +1260,7 @@ def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
         
     filename = f"{safe_title}_{request.project_id[:8]}.{file_extension}"
     
-    print(f"Triggering render for project {request.project_id} -> {filename}")
+    print(f"Triggering render for project {request.project_id} -> {filename} (Template: {request.template_name})")
     
     # 2. Add Dynamic Partition
     try:
@@ -1221,19 +1314,23 @@ def trigger_render(request: RenderRequest, background_tasks: BackgroundTasks):
 
     # 3. Trigger Dagster Job
     # We use tags to specify the partition for the asset job
+    # And pass RenderConfig run configuration
     dagster_client.submit_job_execution(
         "render_asset_job", 
         run_config={
             "ops": {
                 "rendered_course_file": {
-                    "config": {"project_id": request.project_id}
+                    "config": {
+                        "project_id": request.project_id,
+                        "template_name": request.template_name
+                    }
                 }
             }
         },
-        tags={"dagster/partition": filename}
+        tags={"dagster/partition/published_files": filename}
     )
     
-    return {"status": "queued", "message": f"Render job submitted for {filename}"}
+    return {"status": "triggered", "filename": filename, "job": "render_asset_job"}
 
 if __name__ == "__main__":
     import uvicorn

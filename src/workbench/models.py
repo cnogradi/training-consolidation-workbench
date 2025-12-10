@@ -30,6 +30,11 @@ class TargetDraftNode(BaseModel):
     section_type: Optional[str] = None # Template section type (introduction, mandatory_safety, technical, mandatory_assessment)
     rationale: Optional[str] = None  # AI-generated rationale for this section
     suggested_source_ids: List[str] = []  # Slide IDs suggested by AI
+    
+    # Layout Control
+    target_layout: str = "documentary"  # Default layout
+    suggested_layout: Optional[str] = None # Derived from source slides
+    
     order: Optional[int] = 0 # Display order
     level: Optional[int] = 0 # Hierarchy level: 0 = top-level, 1+ = subsection
     created_at: Optional[Any] = None # Creation timestamp
@@ -84,6 +89,7 @@ class SkeletonRequest(BaseModel):
 class RenderRequest(BaseModel):
     project_id: str
     format: str = "pptx" # "pptx" or "typ"
+    template_name: Optional[str] = "standard"
 
 class ProjectTreeResponse(BaseModel):
     """Full project tree structure with all nodes"""

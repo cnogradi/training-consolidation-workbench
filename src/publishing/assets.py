@@ -9,6 +9,7 @@ published_files_partition = DynamicPartitionsDefinition(name="published_files")
 
 class RenderConfig(Config):
     project_id: str
+    template_name: str = "standard"
 
 from src.publishing.typst_generator import generate_typst_document
 from src.publishing.pptx_generator import generate_pptx_document
@@ -62,15 +63,29 @@ def rendered_course_file(context: AssetExecutionContext, config: RenderConfig, m
     with tempfile.TemporaryDirectory() as temp_dir:
         local_path = os.path.join(temp_dir, filename)
         
+        # Download Template if specified
+        template_path = None
+        if config.template_name and config.template_name != "standard":
+             template_key = f"templates/{config.template_name}"
+             try:
+                 obj = minio_client.get_object("cib-sources", template_key)
+                 template_path = os.path.join(temp_dir, "template.pptx")
+                 with open(template_path, "wb") as f:
+                     for chunk in obj.stream(32*1024):
+                         f.write(chunk)
+                 context.log.info(f"Downloaded template {config.template_name} to {template_path}")
+             except Exception as e:
+                 context.log.error(f"Failed to download template {config.template_name}: {e}. Using standard.")
+
         if filename.lower().endswith(".typ"):
-            # Generate Typst source
+             # Generate Typst source
             typst_content = generate_typst_document(project_title, nodes)
             with open(local_path, "w", encoding="utf-8") as f:
                 f.write(typst_content)
                 
         elif filename.lower().endswith(".pptx"):
             # Generate PPTX
-            generate_pptx_document(project_title, nodes, local_path)
+            generate_pptx_document(project_title, nodes, local_path, template_path)
             
         else:
             # Default/Fallback (Text file for unknown extensions)

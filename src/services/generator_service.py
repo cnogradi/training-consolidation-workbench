@@ -481,7 +481,16 @@ class GeneratorService:
             )
             
             # Link to suggested slides
+            suggested_layouts = []
             for slide_info in section.get('suggested_slides', []):
+                # Query slide layout
+                sl_layout_res = self.neo4j_client.execute_query(
+                    "MATCH (s:Slide {id: $id}) RETURN s.layout_style as layout",
+                    {"id": slide_info['slide_id']}
+                )
+                if sl_layout_res and sl_layout_res[0]['layout']:
+                    suggested_layouts.append(sl_layout_res[0]['layout'])
+
                 self.neo4j_client.execute_query(
                     """
                     MATCH (t:TargetNode {id: $target_id})
@@ -492,6 +501,22 @@ class GeneratorService:
                         "target_id": target_id,
                         "slide_id": slide_info['slide_id']
                     }
+                )
+            
+            # Smart Default: Set target_layout based on majority of suggested slides
+            if suggested_layouts:
+                from collections import Counter
+                most_common = Counter(suggested_layouts).most_common(1)
+                majority_layout = most_common[0][0]
+                
+                # Update the node with the calculated layout
+                self.neo4j_client.execute_query(
+                    """
+                    MATCH (t:TargetNode {id: $target_id})
+                    SET t.target_layout = $layout,
+                        t.suggested_layout = $layout
+                    """,
+                    {"target_id": target_id, "layout": majority_layout}
                 )
         
         return project_id
