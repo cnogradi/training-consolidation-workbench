@@ -81,7 +81,9 @@ def build_knowledge_graph(
             full_text_parts.append(f"\n--- Page {page_num} ---\n")
             current_page = page_num
             
-        full_text_parts.append(text)
+        # Format with Type for better Outline Extraction
+        type_ = el.get("type", "Text")
+        full_text_parts.append(f"[{type_}] {text}")
         
     full_text = "\n".join(full_text_parts)
     
@@ -168,14 +170,19 @@ def build_knowledge_graph(
         metadata = el.get("metadata", {})
         text = el.get("text", "")
         
+        
+        # Format text with Type for better Concept Extraction
+        type_ = el.get("type", "Text")
+        formatted_text = f"[{type_}] {text}"
+        
         if "page_number" in metadata:
             # Use explicit page number from extractor
             page_num = metadata["page_number"]
-            pages[page_num].append(text)
+            pages[page_num].append(formatted_text)
             page_elements[page_num].append(el)
         else:
             # Fallback: Assign to synthetic page chunks
-            pages[current_chunk_page].append(text)
+            pages[current_chunk_page].append(formatted_text)
             page_elements[current_chunk_page].append(el)
             
             current_chunk_size += len(text)
