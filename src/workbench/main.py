@@ -169,7 +169,7 @@ def get_slide_details(slide_id: str):
     query = """
     MATCH (s:Slide {id: $id})
     OPTIONAL MATCH (s)-[t:TEACHES]->(c:Concept)
-    RETURN s.id as id, s.number as number, s.text as text, collect({name: c.name, salience: t.salience}) as concepts
+    RETURN s.id as id, s.number as number, s.text as text, s.elements as elements, collect({name: c.name, salience: t.salience}) as concepts
     """
     results = neo4j_client.execute_query(query, {"id": slide_id})
     
@@ -207,11 +207,20 @@ def get_slide_details(slide_id: str):
                 salience=c.get("salience")
             ))
             
+    # 4. Parse Elements
+    elements = []
+    if row.get("elements"):
+        try:
+            elements = json.loads(row["elements"])
+        except:
+            elements = []
+            
     return SourceSlide(
         id=row["id"],
         s3_url=s3_url,
         text_preview=row["text"] if row["text"] else "",
-        concepts=concepts
+        concepts=concepts,
+        elements=elements
     )
 
 @app.get("/source/embedded-images/{course_id}")

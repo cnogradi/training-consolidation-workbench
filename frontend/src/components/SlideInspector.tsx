@@ -259,11 +259,30 @@ export const SlideInspector: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Extracted Text */}
                 <div>
                     <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Extracted Text</h3>
-                    <div className="bg-slate-50 p-3 rounded border border-slate-100 text-xs text-slate-600 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto custom-scrollbar">
-                        {slide.text_preview || <span className="italic opacity-50">No text content extracted.</span>}
+                    <div className="bg-slate-50 p-3 rounded border border-slate-100 text-xs text-slate-600 font-mono whitespace-pre-wrap leading-relaxed space-y-3">
+                        {slide.elements && slide.elements.length > 0 ? (
+                            slide.elements.map((el, i) => (
+                                <div key={i} className="group hover:bg-slate-100 p-1 -m-1 rounded transition-colors">
+                                    <div className="flex items-center gap-2 mb-1 opacity-50 text-[10px] font-sans font-bold uppercase tracking-wide">
+                                        <span className={clsx(
+                                            "inline-block w-2 h-2 rounded-full",
+                                            el.type === "Title" ? "bg-teal-400" :
+                                                el.type === "NarrativeText" ? "bg-blue-400" :
+                                                    el.type === "ListItem" ? "bg-orange-400" :
+                                                        "bg-slate-400"
+                                        )}></span>
+                                        {el.type}
+                                    </div>
+                                    <div className="pl-3 border-l-2 border-slate-200 group-hover:border-teal-200 transition-colors">
+                                        {el.text}
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            slide.text_preview || <span className="italic opacity-50">No text content extracted.</span>
+                        )}
                     </div>
                 </div>
             </div>

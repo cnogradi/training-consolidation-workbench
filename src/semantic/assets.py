@@ -225,10 +225,11 @@ def build_knowledge_graph(
             SET sl.number = $page_num, 
                 sl.text = $text,
                 sl.asset_type = $asset_type,
-                sl.layout_style = $layout_style
+                sl.layout_style = $layout_style,
+                sl.elements = $elements_json
             MERGE (c)-[:HAS_SLIDE]->(sl)
             """,
-            {"course_id": course_id, "id": slide_id, "page_num": page_num, "text": slide_text[:500], "asset_type": asset_type, "layout_style": layout_style}
+            {"course_id": course_id, "id": slide_id, "page_num": page_num, "text": slide_text[:500], "asset_type": asset_type, "layout_style": layout_style, "elements_json": json.dumps(elements)}
         )
         
         # Extract Concepts (BAML)
