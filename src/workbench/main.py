@@ -134,7 +134,7 @@ def get_course_sections(course_id: str):
            s.level as level,
            // Priority: Property > COVERS > HAS_SLIDE > Empty
            coalesce(s.concept_summary, covered_concepts[0..10], slide_concepts[0..10], []) as concepts
-    ORDER BY s.id
+    ORDER BY coalesce(s.start_page, 0), s.id
     """
     sections = neo4j_client.execute_query(query, {"course_id": course_id})
     
