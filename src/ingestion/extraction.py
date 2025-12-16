@@ -76,6 +76,7 @@ def extract_text_and_metadata(file_path: str, extract_images: bool = False, imag
         kwargs = {
             "strategy": strategy,
             "infer_table_structure": True,
+            "include_slide_notes": True,  # Extract speaker notes from PPTX
         }
         if extract_images and image_output_dir:
             # Capture Images (Diagrams, Clip Art, Photos) and Tables
