@@ -152,12 +152,31 @@ const DocumentaryLayout: React.FC<{ content?: TiptapNode; markdown?: string; tit
 
 // Split Layout - two columns
 const SplitLayout: React.FC<{ content?: TiptapNode; markdown?: string; title?: string }> = ({ content, markdown, title }) => {
-    if (content) {
-        const textContent = renderTextContent(content);
-        const images = extractImages(content);
-        // 'left' explicitly places on text side, everything else (including unrecognized roles) goes to right
-        const leftImages = images.filter(i => i.layoutRole === 'left');
-        const rightImages = images.filter(i => i.layoutRole !== 'left'); // All non-left go to right
+    if (content && content.content) {
+        // Find the horizontal rule index to split content
+        const hrIndex = content.content.findIndex(node => node.type === 'horizontalRule');
+
+        let leftNodes: TiptapNode[];
+        let rightNodes: TiptapNode[];
+
+        if (hrIndex !== -1) {
+            // Split at the horizontal rule
+            leftNodes = content.content.slice(0, hrIndex);
+            rightNodes = content.content.slice(hrIndex + 1);
+        } else {
+            // No horizontal rule - put all text on left, images on right
+            leftNodes = content.content.filter(n => n.type !== 'image');
+            rightNodes = content.content.filter(n => n.type === 'image');
+        }
+
+        // Create synthetic TipTap nodes for each column
+        const leftContent: TiptapNode = { type: 'doc', content: leftNodes };
+        const rightContent: TiptapNode = { type: 'doc', content: rightNodes };
+
+        const leftText = renderTextContent(leftContent);
+        const rightText = renderTextContent(rightContent);
+        const leftImages = extractImages(leftContent);
+        const rightImages = extractImages(rightContent);
 
         return (
             <div className="p-4 grid grid-cols-2 gap-4 h-full bg-white">
@@ -167,16 +186,19 @@ const SplitLayout: React.FC<{ content?: TiptapNode; markdown?: string; title?: s
                     </div>
                 )}
                 <div className="bg-slate-50 p-3 rounded-md overflow-auto">
-                    {textContent}
+                    {leftText}
                     {leftImages.map((img, idx) => (
                         <img key={idx} src={img.src} alt={img.alt} className="w-full rounded-md shadow-sm my-2" />
                     ))}
                 </div>
-                <div className="bg-slate-100 p-3 rounded-md flex flex-col items-center justify-center overflow-auto">
-                    {rightImages.length > 0 ? (
-                        rightImages.map((img, idx) => (
-                            <img key={idx} src={img.src} alt={img.alt} className="max-w-full max-h-48 rounded-md shadow-sm" />
-                        ))
+                <div className="bg-slate-100 p-3 rounded-md overflow-auto">
+                    {rightText.length > 0 || rightImages.length > 0 ? (
+                        <>
+                            {rightText}
+                            {rightImages.map((img, idx) => (
+                                <img key={idx} src={img.src} alt={img.alt} className="max-w-full max-h-48 rounded-md shadow-sm" />
+                            ))}
+                        </>
                     ) : (
                         <span className="text-slate-400 text-xs italic">Right Column</span>
                     )}
@@ -185,9 +207,14 @@ const SplitLayout: React.FC<{ content?: TiptapNode; markdown?: string; title?: s
         );
     }
 
-    // Markdown fallback - split view with text on left, images on right
-    const mdImages = extractImagesFromMarkdown(markdown || '');
-    const textOnly = stripImagesFromMarkdown(markdown || '');
+    // Markdown fallback - split on --- separator (LLM-generated split marker)
+    // Content before --- goes to left column, after --- goes to right column
+    const mdContent = markdown || '';
+
+    // Split on horizontal rule (--- on its own line)
+    const parts = mdContent.split(/\n---+\n/);
+    const leftContent = parts[0] || '';
+    const rightContent = parts.slice(1).join('\n---\n') || ''; // Join remaining parts for right
 
     return (
         <div className="p-4 grid grid-cols-2 gap-4 h-full bg-white">
@@ -199,16 +226,17 @@ const SplitLayout: React.FC<{ content?: TiptapNode; markdown?: string; title?: s
             <div className="bg-slate-50 p-3 rounded-md overflow-auto">
                 <div
                     className="prose prose-sm max-w-none text-slate-700"
-                    dangerouslySetInnerHTML={{ __html: marked.parse(textOnly) as string }}
+                    dangerouslySetInnerHTML={{ __html: marked.parse(leftContent) as string }}
                 />
             </div>
-            <div className="bg-slate-100 p-3 rounded-md flex flex-col items-center justify-center overflow-auto">
-                {mdImages.length > 0 ? (
-                    mdImages.map((img, idx) => (
-                        <img key={idx} src={img.src} alt={img.alt} className="max-w-full max-h-32 rounded-md shadow-sm mb-2" />
-                    ))
+            <div className="bg-slate-100 p-3 rounded-md overflow-auto">
+                {rightContent ? (
+                    <div
+                        className="prose prose-sm max-w-none text-slate-700"
+                        dangerouslySetInnerHTML={{ __html: marked.parse(rightContent) as string }}
+                    />
                 ) : (
-                    <span className="text-slate-400 text-xs italic">No images</span>
+                    <span className="text-slate-400 text-xs italic">Right column empty</span>
                 )}
             </div>
         </div>

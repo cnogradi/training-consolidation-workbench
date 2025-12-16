@@ -244,29 +244,32 @@ FORMAT REQUIREMENTS:
             "documentary": """
 LAYOUT: Documentary (Full Content)
 FORMAT REQUIREMENTS:
-- Create full narrative content with complete paragraphs
+- This is the most content-rich layout, but still keep it under 200 words
+- Create narrative content with 2-3 short paragraphs
 - Use proper heading hierarchy (## for sections, ### for subsections)
-- Include detailed explanations and context
-- Use bullet lists for procedures or key points
-- Can include multiple images/diagrams inline
-- This is the most content-rich layout - be thorough
+- Use bullet lists for procedures or key points (5-7 bullets max)
+- Can include 1-2 images/diagrams inline
+- Content must still fit on ONE slide - be concise
 - Include safety callouts where relevant
 """,
             "split": """
-LAYOUT: Split (Two Columns)
+LAYOUT: Split (Two Columns) - Text + Image or Text + Text
 FORMAT REQUIREMENTS:
-- Structure content so the FIRST HALF goes in the left column and SECOND HALF goes in the right column
-- DO NOT write "Left Column" or "Right Column" as visible headings
+- CRITICAL: Keep content VERY BRIEF - this must fit on ONE slide with two columns
+- MAXIMUM 100 words total (about 50 words per column)
+- Left column: 3-5 bullet points MAX, or 1-2 short paragraphs
+- Right column: typically an image placeholder {{asset_id}} or brief supporting text
 - Use a horizontal rule (---) to separate content for the two columns
-- Left side (before ---): typically the main text content, procedures, explanations
-- Right side (after ---): typically supporting content, image, or related information
-- Keep both halves roughly balanced in length
+- DO NOT write "Left Column" or "Right Column" as visible headings
+- Prioritize KEY POINTS only - omit details that can be covered verbally
 - Example structure:
-  Main content paragraph here...
-  - Bullet point 1
-  - Bullet point 2
+  Brief intro sentence.
+  - Key point 1
+  - Key point 2
+  - Key point 3
   ---
-  Supporting content or image reference here...
+  {{image_asset_id}}
+  Caption for the image.
 """,
             "grid": """
 LAYOUT: Grid (2x2 or Multi-Image)
