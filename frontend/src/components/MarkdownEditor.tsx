@@ -225,7 +225,9 @@ const ImageNodeView = (props: any) => {
 // ... inside MarkdownEditor component ...
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onSave, onJsonChange }) => {
-    const lastSavedContent = useRef(content);
+    // Initialize to empty - so first content load won't be skipped
+    // After loading, this will be set to content value
+    const lastSavedContent = useRef<string>('');
     const [viewMode, setViewMode] = useState<'wysiwyg' | 'markdown'>('wysiwyg');
     const [markdownText, setMarkdownText] = useState(content);
     const [resolvedContent, setResolvedContent] = useState<string | null>(null);
@@ -412,8 +414,23 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onSave,
     // Update editor content when resolved content is ready or content prop changes
     // BUT skip if the content matches what we just saved (to prevent overwriting edits)
     useEffect(() => {
-        if (!editor) return;
-        if (resolvedContent === null) return;
+        if (!editor) {
+            console.log('[MarkdownEditor] No editor yet');
+            return;
+        }
+        if (resolvedContent === null) {
+            console.log('[MarkdownEditor] Waiting for URL resolution...');
+            return;
+        }
+
+        console.log('[MarkdownEditor] Sync check:', {
+            contentLength: content?.length || 0,
+            resolvedContentLength: resolvedContent?.length || 0,
+            lastSavedLength: lastSavedContent.current?.length || 0,
+            lastLoadedLength: lastLoadedContentRef.current?.length || 0,
+            contentMatchesSaved: content === lastSavedContent.current,
+            contentMatchesLoaded: content === lastLoadedContentRef.current,
+        });
 
         // Skip if content matches what we last saved (echo from auto-save)
         if (content === lastSavedContent.current) {
@@ -423,16 +440,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onSave,
 
         // Skip if content matches what we last loaded (no change)
         if (content === lastLoadedContentRef.current) {
+            console.log('[MarkdownEditor] Skipping sync - content matches last loaded');
             return;
         }
 
-        // Load the new content
+        // Load the new content into the editor
+        console.log('[MarkdownEditor] Loading new content into editor, length:', resolvedContent?.length || 0);
         const newHtml = marked.parse(resolvedContent || '') as string;
+        console.log('[MarkdownEditor] Parsed HTML length:', newHtml.length);
         editor.commands.setContent(newHtml);
         lastLoadedContentRef.current = content;
         lastSavedContent.current = content;
         setMarkdownText(content);
-        console.log('[MarkdownEditor] Content updated from props');
+        console.log('[MarkdownEditor] Content updated from props successfully');
     }, [resolvedContent, editor, content]);
 
     if (!editor) {
