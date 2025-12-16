@@ -147,14 +147,20 @@ const ImageNodeView = (props: any) => {
     const { layoutRole: _layoutRole, ...domAttrs } = node.attrs;
 
     return (
-        <NodeViewWrapper className="relative inline-block group leading-none my-2 max-w-full">
+        <NodeViewWrapper
+            className="relative inline-block group leading-none my-2 max-w-full"
+            data-drag-handle
+        >
+            {/* Container with data-drag-handle for TipTap drag support */}
             <div className="relative inline-block">
+                {/* The Image */}
                 <img
                     ref={imgRef}
                     src={domAttrs.src}
                     alt={domAttrs.alt || ''}
                     title={domAttrs.title || undefined}
                     style={{ ...domAttrs.style, width: width }}
+                    draggable={false}
                     className={clsx(
                         "max-w-full h-auto rounded-lg shadow-sm transition-shadow",
                         selected ? "ring-2 ring-brand-teal" : ""
@@ -163,10 +169,14 @@ const ImageNodeView = (props: any) => {
 
                 {/* Layout Role Selector - appears when selected */}
                 {selected && (
-                    <div className="absolute top-2 left-2 z-20">
+                    <div className="absolute top-2 left-2 z-20" contentEditable={false}>
                         <select
                             value={node.attrs.layoutRole || 'auto'}
-                            onChange={(e) => updateAttributes({ layoutRole: e.target.value })}
+                            onChange={(e) => {
+                                e.stopPropagation();
+                                updateAttributes({ layoutRole: e.target.value });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
                             className="text-xs px-2 py-1 bg-white/95 border border-slate-300 rounded shadow-md focus:outline-none focus:ring-1 focus:ring-brand-teal"
                             title={`Layout role for ${currentLayout} layout`}
                         >
@@ -181,17 +191,27 @@ const ImageNodeView = (props: any) => {
 
                 {/* Resize Handle */}
                 <div
-                    onMouseDown={handleMouseDown}
-                    className="absolute bottom-1 right-1 w-3 h-3 bg-brand-teal border border-white rounded-full cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
+                    onMouseDown={(e) => {
+                        e.stopPropagation();
+                        handleMouseDown(e);
+                    }}
+                    className="absolute bottom-1 right-1 w-4 h-4 bg-brand-teal border-2 border-white rounded-full cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-sm"
                     title="Resize image"
+                    contentEditable={false}
                 />
 
                 {/* Delete Button */}
                 <button
-                    onClick={() => deleteNode()}
-                    className="absolute top-2 right-2 bg-white/90 p-1.5 rounded-full text-slate-500 hover:text-red-500 hover:bg-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        deleteNode();
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="absolute top-2 right-2 bg-white/90 p-1.5 rounded-full text-slate-500 hover:text-red-500 hover:bg-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-20"
                     title="Remove image"
                     type="button"
+                    contentEditable={false}
                 >
                     <X size={14} />
                 </button>
@@ -319,59 +339,45 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onSave,
                 style: 'word-break: break-word; overflow-wrap: anywhere;',
             },
             handleDrop: (view, event, _slice, moved) => {
-                // Handle dropped content - check if it's an image or image markdown
-                if (!moved && event.dataTransfer) {
-                    const text = event.dataTransfer.getData('text/plain');
-                    const assetData = event.dataTransfer.getData('application/x-asset');
+                // Let TipTap handle internal moves (including image repositioning)
+                if (moved) return false;
 
-                    // Calculate the actual drop position from mouse coordinates
-                    const coordinates = view.posAtCoords({ left: event.clientX, top: event.clientY });
-                    const dropPos = coordinates ? coordinates.pos : view.state.selection.from;
+                // Only handle external drops with our custom asset data (from AssetDrawer)
+                if (!event.dataTransfer) return false;
 
-                    // Check for our custom asset data (from AssetDrawer)
-                    if (assetData) {
-                        try {
-                            const asset = JSON.parse(assetData);
-                            if (asset.url) {
-                                // Build alt text with optional size metadata
-                                let altText = asset.filename || '';
+                const assetData = event.dataTransfer.getData('application/x-asset');
+                if (!assetData) return false; // Let TipTap handle other drops
 
-                                // If we have bounding box and canvas dimensions, include them
-                                if (asset.bbox && asset.canvas_width && asset.canvas_height) {
-                                    const sizeInfo = {
-                                        bw: Math.round(asset.bbox.width),
-                                        bh: Math.round(asset.bbox.height),
-                                        cw: Math.round(asset.canvas_width),
-                                        ch: Math.round(asset.canvas_height)
-                                    };
-                                    altText = `${asset.filename}|${JSON.stringify(sizeInfo)}`;
-                                }
+                try {
+                    const asset = JSON.parse(assetData);
+                    if (asset.url) {
+                        // Build alt text with optional size metadata
+                        let altText = asset.filename || '';
 
-                                // Insert as image node at drop position
-                                const { schema } = view.state;
-                                const node = schema.nodes.image.create({ src: asset.url, alt: altText });
-                                const transaction = view.state.tr.insert(dropPos, node);
-                                view.dispatch(transaction);
-                                event.preventDefault();
-                                return true;
-                            }
-                        } catch (e) {
-                            console.error('Failed to parse asset data:', e);
+                        if (asset.bbox && asset.canvas_width && asset.canvas_height) {
+                            const sizeInfo = {
+                                bw: Math.round(asset.bbox.width),
+                                bh: Math.round(asset.bbox.height),
+                                cw: Math.round(asset.canvas_width),
+                                ch: Math.round(asset.canvas_height)
+                            };
+                            altText = `${asset.filename}|${JSON.stringify(sizeInfo)}`;
                         }
-                    }
 
-                    // Check for markdown image syntax: ![alt](url)
-                    const imageMarkdownMatch = text?.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-                    if (imageMarkdownMatch) {
-                        const [, alt, url] = imageMarkdownMatch;
+                        // Calculate drop position and insert
+                        const coordinates = view.posAtCoords({ left: event.clientX, top: event.clientY });
+                        const dropPos = coordinates ? coordinates.pos : view.state.selection.from;
                         const { schema } = view.state;
-                        const node = schema.nodes.image.create({ src: url, alt: alt || '' });
+                        const node = schema.nodes.image.create({ src: asset.url, alt: altText });
                         const transaction = view.state.tr.insert(dropPos, node);
                         view.dispatch(transaction);
                         event.preventDefault();
                         return true;
                     }
+                } catch (e) {
+                    console.error('Failed to parse asset data:', e);
                 }
+
                 return false;
             },
         },
@@ -389,6 +395,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onSave,
             // Only save to backend if content actually changed
             if (markdown !== lastSavedContent.current) {
                 lastSavedContent.current = markdown;
+                // IMPORTANT: Also update lastLoadedContentRef to prevent useEffect from 
+                // overwriting our edit when the prop updates with this same content
+                if (lastLoadedContentRef.current !== null) {
+                    lastLoadedContentRef.current = markdown;
+                }
                 setMarkdownText(markdown);
                 onSave(markdown);
             }
@@ -399,18 +410,29 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onSave,
     const lastLoadedContentRef = useRef<string | null>(null);
 
     // Update editor content when resolved content is ready or content prop changes
+    // BUT skip if the content matches what we just saved (to prevent overwriting edits)
     useEffect(() => {
         if (!editor) return;
+        if (resolvedContent === null) return;
 
-        // If we have resolved content and it's different from what we last loaded
-        if (resolvedContent !== null && content !== lastLoadedContentRef.current) {
-            const newHtml = marked.parse(resolvedContent || '') as string;
-            editor.commands.setContent(newHtml);
-            lastLoadedContentRef.current = content; // Track that we loaded this content
-            lastSavedContent.current = content; // Track original content for save comparisons
-            setMarkdownText(content); // Keep original (with minio://) for raw view
-            console.log('[MarkdownEditor] Content updated from props');
+        // Skip if content matches what we last saved (echo from auto-save)
+        if (content === lastSavedContent.current) {
+            console.log('[MarkdownEditor] Skipping sync - content matches last saved');
+            return;
         }
+
+        // Skip if content matches what we last loaded (no change)
+        if (content === lastLoadedContentRef.current) {
+            return;
+        }
+
+        // Load the new content
+        const newHtml = marked.parse(resolvedContent || '') as string;
+        editor.commands.setContent(newHtml);
+        lastLoadedContentRef.current = content;
+        lastSavedContent.current = content;
+        setMarkdownText(content);
+        console.log('[MarkdownEditor] Content updated from props');
     }, [resolvedContent, editor, content]);
 
     if (!editor) {
